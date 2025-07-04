@@ -128,20 +128,23 @@ async function loadPDF(event) {
         const originalText = welcomeText.textContent;
         welcomeText.textContent = 'PDF Yükleniyor...';
         
-        const arrayBuffer = await file.arrayBuffer();
-        console.log('ArrayBuffer oluşturuldu, boyut:', arrayBuffer.byteLength);
+        // Read file as ArrayBuffer multiple times to ensure fresh copies
+        console.log('PDF dosyası okunuyor...');
         
-        // Create separate copies for each library to avoid detached ArrayBuffer error
-        const pdfJsBuffer = arrayBuffer.slice(); // Copy for PDF.js
-        const pdfLibBuffer = arrayBuffer.slice(); // Copy for PDF-lib
+        // First read for PDF.js (display)
+        const pdfJsBuffer = await file.arrayBuffer();
+        console.log('PDF.js için ArrayBuffer oluşturuldu, boyut:', pdfJsBuffer.byteLength);
         
-        console.log('ArrayBuffer kopyaları oluşturuldu');
-        
-        // Load with PDF.js for display
+        // Load with PDF.js for display first
         console.log('PDF.js ile yükleme başladı...');
         pdfDoc = await pdfjsLib.getDocument(pdfJsBuffer).promise;
         pageCount = pdfDoc.numPages;
         console.log('PDF.js yükleme tamamlandı. Sayfa sayısı:', pageCount);
+        
+        // Second read for PDF-lib (editing) - fresh ArrayBuffer
+        console.log('PDF-lib için ikinci okuma başladı...');
+        const pdfLibBuffer = await file.arrayBuffer();
+        console.log('PDF-lib için ArrayBuffer oluşturuldu, boyut:', pdfLibBuffer.byteLength);
         
         // Load with PDF-lib for editing
         console.log('PDF-lib ile yükleme başladı...');
@@ -540,14 +543,13 @@ async function deletePage() {
         // Reload the PDF to reflect changes
         const pdfBytes = await currentPdf.save();
         
-        // Create separate copies for each library to avoid detached ArrayBuffer error
-        const pdfJsBytes = pdfBytes.slice();
-        const pdfLibBytes = pdfBytes.slice();
-        
+        // Create fresh Uint8Array for PDF-lib to avoid detached ArrayBuffer
+        const pdfLibBytes = new Uint8Array(pdfBytes);
         const newPdf = await PDFLib.PDFDocument.load(pdfLibBytes);
         currentPdf = newPdf;
         
-        // Reload for display
+        // Create fresh Uint8Array for PDF.js
+        const pdfJsBytes = new Uint8Array(pdfBytes);
         pdfDoc = await pdfjsLib.getDocument(pdfJsBytes).promise;
         renderPage(currentPageNum);
         updatePageInfo();
@@ -569,14 +571,13 @@ async function addBlankPage() {
         // Reload the PDF to reflect changes
         const pdfBytes = await currentPdf.save();
         
-        // Create separate copies for each library to avoid detached ArrayBuffer error
-        const pdfJsBytes = pdfBytes.slice();
-        const pdfLibBytes = pdfBytes.slice();
-        
+        // Create fresh Uint8Array for PDF-lib to avoid detached ArrayBuffer
+        const pdfLibBytes = new Uint8Array(pdfBytes);
         const newPdf = await PDFLib.PDFDocument.load(pdfLibBytes);
         currentPdf = newPdf;
         
-        // Reload for display
+        // Create fresh Uint8Array for PDF.js
+        const pdfJsBytes = new Uint8Array(pdfBytes);
         pdfDoc = await pdfjsLib.getDocument(pdfJsBytes).promise;
         updatePageInfo();
         
@@ -651,8 +652,8 @@ async function applyAnnotations() {
                         try {
                             // Convert signature image to PDF format
                             const imageBytes = await fetch(annotation.image).then(res => res.arrayBuffer());
-                            // Create a copy to avoid detached ArrayBuffer
-                            const imageBytesCopy = imageBytes.slice();
+                            // Create fresh Uint8Array to avoid detached ArrayBuffer
+                            const imageBytesCopy = new Uint8Array(imageBytes);
                             const image = await currentPdf.embedPng(imageBytesCopy);
                             
                             page.drawImage(image, {
