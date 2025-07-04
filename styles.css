@@ -639,7 +639,7 @@ body {
 
 /* Modern Text Annotations */
 .text-annotation {
-    background: rgba(255, 255, 255, 0.9);
+    background: transparent;
     border-radius: 4px;
     outline: none;
     transition: all 0.2s ease;
@@ -647,22 +647,22 @@ body {
     min-height: 30px;
     white-space: nowrap;
     border: 2px solid transparent;
-    padding: 6px 8px !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 2px !important;
+    box-shadow: none;
     line-height: 1.2;
 }
 
 .text-annotation:hover {
-    background: rgba(255, 255, 255, 0.95);
+    background: transparent;
     border-color: rgba(59, 130, 246, 0.3);
     cursor: move;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: none;
 }
 
 .text-annotation.selected {
     border: 2px dashed #3b82f6 !important;
-    background: rgba(59, 130, 246, 0.05);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    background: transparent;
+    box-shadow: none;
 }
 
 /* Resize Handles */
@@ -826,26 +826,17 @@ body {
 /* Enhanced Text Annotation Styles */
 .text-annotation.editing {
     border: 2px solid #3b82f6 !important;
-    background: white !important;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    background: transparent !important;
+    box-shadow: none;
 }
 
-/* Modern Drag Handles */
+/* Modern Drag Handles - Disabled for cleaner look */
 .text-annotation::before {
-    content: '⋮⋮';
-    position: absolute;
-    left: -12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #94a3b8;
-    font-size: 12px;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    cursor: move;
+    display: none;
 }
 
 .text-annotation:hover::before {
-    opacity: 1;
+    display: none;
 }
 
 /* Enhanced Canvas Cursor */

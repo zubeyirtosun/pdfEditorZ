@@ -330,6 +330,8 @@ function selectElement(element, annotation) {
 }
 
 function editText(element, annotation) {
+    isEditingText = true; // Set editing flag
+    
     const input = document.createElement('input');
     input.type = 'text';
     input.value = annotation.text;
@@ -338,17 +340,18 @@ function editText(element, annotation) {
     input.style.top = element.style.top;
     input.style.fontSize = element.style.fontSize;
     input.style.color = element.style.color;
-    input.style.border = '2px solid #667eea';
-    input.style.background = 'white';
-    input.style.padding = '2px';
-    input.style.borderRadius = '4px';
+    input.style.border = 'none';
+    input.style.background = 'transparent';
     input.style.outline = 'none';
+    input.style.fontFamily = 'inherit';
+    input.style.width = Math.max(100, element.offsetWidth) + 'px';
     
     overlay.appendChild(input);
     input.focus();
     input.select();
     
     const saveText = () => {
+        isEditingText = false; // Reset editing flag
         if (input.value.trim()) {
             saveState(); // Save for undo
             annotation.text = input.value;
@@ -363,6 +366,7 @@ function editText(element, annotation) {
             e.preventDefault();
             saveText();
         } else if (e.key === 'Escape') {
+            isEditingText = false; // Reset editing flag
             overlay.removeChild(input);
         }
     });
@@ -989,6 +993,9 @@ function drawLine(x1, y1, x2, y2) {
 function addModernTextAnnotation(x, y) {
     saveState(); // Save state before adding text
     
+    // Set editing flag since we'll start editing immediately
+    isEditingText = true;
+    
     // Generate unique ID
     const id = 'text_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
@@ -1491,18 +1498,30 @@ async function applyAnnotations() {
             
             const page = pages[pageIndex];
             const { width, height } = page.getSize();
+            
+            // Get the original PDF page for coordinate transformation
+            const pdfPage = await pdfDoc.getPage(parseInt(pageNum));
+            const viewport = pdfPage.getViewport({ scale: 1.0 }); // Get unscaled viewport
+            
             console.log(`Sayfa ${pageNum} işleniyor: ${pageAnnotations.length} annotation`);
+            console.log(`PDF boyutları: ${width}x${height}, Viewport: ${viewport.width}x${viewport.height}`);
             
             for (const annotation of pageAnnotations) {
                 try {
+                    // Scale annotation coordinates to match PDF coordinate system
+                    const scaleX = width / viewport.width;
+                    const scaleY = height / viewport.height;
+                    
                     switch (annotation.type) {
                         case 'text':
-                            // Use actual annotation coordinates (not canvas-relative)
                             const textFont = await currentPdf.embedFont(PDFLib.StandardFonts.Helvetica);
+                            const pdfX = annotation.x * scaleX;
+                            const pdfY = height - (annotation.y * scaleY) - (annotation.size * scaleY);
+                            
                             page.drawText(annotation.text || 'Metin', {
-                                x: annotation.x,
-                                y: height - annotation.y - annotation.size,
-                                size: annotation.size,
+                                x: pdfX,
+                                y: pdfY,
+                                size: annotation.size * scaleY,
                                 color: PDFLib.rgb(
                                     parseInt(annotation.color.slice(1, 3), 16) / 255,
                                     parseInt(annotation.color.slice(3, 5), 16) / 255,
@@ -1510,16 +1529,17 @@ async function applyAnnotations() {
                                 ),
                                 font: textFont
                             });
-                            console.log('Metin eklendi:', annotation.text);
+                            console.log('Metin eklendi:', annotation.text, `PDF pos: ${pdfX}, ${pdfY}`);
                             break;
                         
                         case 'highlight':
-                            // Add highlight rectangle
+                            const hlX = annotation.x * scaleX;
+                            const hlY = height - (annotation.y * scaleY) - (annotation.height * scaleY);
                             page.drawRectangle({
-                                x: annotation.x,
-                                y: height - annotation.y - annotation.height,
-                                width: annotation.width,
-                                height: annotation.height,
+                                x: hlX,
+                                y: hlY,
+                                width: annotation.width * scaleX,
+                                height: annotation.height * scaleY,
                                 color: PDFLib.rgb(
                                     parseInt(annotation.color.slice(1, 3), 16) / 255,
                                     parseInt(annotation.color.slice(3, 5), 16) / 255,
@@ -1543,11 +1563,13 @@ async function applyAnnotations() {
                                         image = await currentPdf.embedJpg(imageBytes);
                                     }
                                     
+                                    const imgX = annotation.x * scaleX;
+                                    const imgY = height - (annotation.y * scaleY) - (annotation.height * scaleY);
                                     page.drawImage(image, {
-                                        x: annotation.x,
-                                        y: height - annotation.y - annotation.height,
-                                        width: annotation.width,
-                                        height: annotation.height
+                                        x: imgX,
+                                        y: imgY,
+                                        width: annotation.width * scaleX,
+                                        height: annotation.height * scaleY
                                     });
                                     console.log('Resim eklendi');
                                 } catch (imgError) {
@@ -1557,7 +1579,6 @@ async function applyAnnotations() {
                             break;
                         
                         case 'form':
-                            // Add form elements as text annotations for now
                             const formFont = await currentPdf.embedFont(PDFLib.StandardFonts.Helvetica);
                             let formText = '';
                             
@@ -1576,10 +1597,12 @@ async function applyAnnotations() {
                                     break;
                             }
                             
+                            const formX = annotation.x * scaleX;
+                            const formY = height - (annotation.y * scaleY) - (12 * scaleY);
                             page.drawText(formText, {
-                                x: annotation.x,
-                                y: height - annotation.y - 12,
-                                size: 12,
+                                x: formX,
+                                y: formY,
+                                size: 12 * scaleY,
                                 color: PDFLib.rgb(0, 0, 0),
                                 font: formFont
                             });
@@ -1587,11 +1610,14 @@ async function applyAnnotations() {
                             break;
                         
                         case 'draw':
-                            // Draw line using actual coordinates
+                            const lineX1 = annotation.x1 * scaleX;
+                            const lineY1 = height - (annotation.y1 * scaleY);
+                            const lineX2 = annotation.x2 * scaleX;
+                            const lineY2 = height - (annotation.y2 * scaleY);
                             page.drawLine({
-                                start: { x: annotation.x1, y: height - annotation.y1 },
-                                end: { x: annotation.x2, y: height - annotation.y2 },
-                                thickness: annotation.width || 2,
+                                start: { x: lineX1, y: lineY1 },
+                                end: { x: lineX2, y: lineY2 },
+                                thickness: (annotation.width || 2) * scaleY,
                                 color: PDFLib.rgb(
                                     parseInt(annotation.color.slice(1, 3), 16) / 255,
                                     parseInt(annotation.color.slice(3, 5), 16) / 255,
@@ -1608,23 +1634,26 @@ async function applyAnnotations() {
                                 parseInt(annotation.color.slice(5, 7), 16) / 255
                             );
                             
+                            const shapeX = annotation.x * scaleX;
+                            const shapeY = height - (annotation.y * scaleY) - (annotation.height * scaleY);
+                            
                             if (annotation.shapeType === 'rectangle') {
                                 page.drawRectangle({
-                                    x: annotation.x,
-                                    y: height - annotation.y - annotation.height,
-                                    width: annotation.width,
-                                    height: annotation.height,
+                                    x: shapeX,
+                                    y: shapeY,
+                                    width: annotation.width * scaleX,
+                                    height: annotation.height * scaleY,
                                     borderColor: shapeColor,
-                                    borderWidth: 2
+                                    borderWidth: 2 * scaleY
                                 });
                             } else if (annotation.shapeType === 'circle') {
-                                const radius = Math.min(annotation.width, annotation.height) / 2;
+                                const radius = Math.min(annotation.width * scaleX, annotation.height * scaleY) / 2;
                                 page.drawCircle({
-                                    x: annotation.x + radius,
-                                    y: height - annotation.y - radius,
+                                    x: shapeX + radius,
+                                    y: shapeY + radius,
                                     size: radius,
                                     borderColor: shapeColor,
-                                    borderWidth: 2
+                                    borderWidth: 2 * scaleY
                                 });
                             }
                             console.log('Şekil eklendi:', annotation.shapeType);
@@ -1633,7 +1662,6 @@ async function applyAnnotations() {
                         case 'signature':
                             if (annotation.image) {
                                 try {
-                                    // Handle base64 image data
                                     const base64Data = annotation.image.split(',')[1];
                                     const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
                                     
@@ -1644,11 +1672,13 @@ async function applyAnnotations() {
                                         image = await currentPdf.embedJpg(imageBytes);
                                     }
                                     
+                                    const sigX = annotation.x * scaleX;
+                                    const sigY = height - (annotation.y * scaleY) - (annotation.height * scaleY);
                                     page.drawImage(image, {
-                                        x: annotation.x,
-                                        y: height - annotation.y - annotation.height,
-                                        width: annotation.width,
-                                        height: annotation.height
+                                        x: sigX,
+                                        y: sigY,
+                                        width: annotation.width * scaleX,
+                                        height: annotation.height * scaleY
                                     });
                                     console.log('İmza eklendi');
                                 } catch (imgError) {
@@ -1753,8 +1783,41 @@ window.addEventListener('click', function(event) {
     }
 });
 
+// Global variable to track if we're editing text
+let isEditingText = false;
+
 // Keyboard shortcuts
 document.addEventListener('keydown', function(event) {
+    // Skip shortcuts if user is editing text
+    if (isEditingText || event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.contentEditable === 'true') {
+        // Only allow Ctrl shortcuts during text editing
+        if (event.ctrlKey || event.metaKey) {
+            switch (event.key) {
+                case 's':
+                    event.preventDefault();
+                    downloadPDF();
+                    break;
+                case 'o':
+                    event.preventDefault();
+                    document.getElementById('pdfInput').click();
+                    break;
+                case 'z':
+                    event.preventDefault();
+                    if (event.shiftKey) {
+                        redo(); // Ctrl+Shift+Z
+                    } else {
+                        undo(); // Ctrl+Z
+                    }
+                    break;
+                case 'y':
+                    event.preventDefault();
+                    redo(); // Ctrl+Y
+                    break;
+            }
+        }
+        return; // Exit early, don't process other shortcuts
+    }
+
     if (event.ctrlKey || event.metaKey) {
         switch (event.key) {
             case 's':
@@ -1780,7 +1843,7 @@ document.addEventListener('keydown', function(event) {
         }
     }
     
-    // Tool shortcuts
+    // Tool shortcuts - only when not editing text
     switch (event.key) {
         case 'ArrowLeft':
             previousPage();
