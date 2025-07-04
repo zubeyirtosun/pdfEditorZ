@@ -701,9 +701,10 @@ function activateTool(tool) {
     if (tool === 'signature') {
         openSignatureModal();
     } else if (tool === 'image' && !currentImage) {
-        // If image tool is activated but no image is loaded, open file dialog
+        // If image tool is activated but no image is loaded, open file dialog once
+        showNotification('Resim seçin ve PDF üzerinde yerleştirmek için tıklayın', 'info');
         document.getElementById('imageInput').click();
-        return;
+        // Don't return here, let the tool be activated so user can choose cursor tool
     }
     
     // Update cursor based on tool
@@ -1271,8 +1272,8 @@ function autoSave() {
             localStorage.setItem('pdfeditor_autosave', currentState);
             localStorage.setItem('pdfeditor_timestamp', Date.now());
             lastSavedState = currentState;
-            showNotification('Otomatik kayıt yapıldı', 'success');
-            console.log('Auto-save completed');
+            // Removed notification to prevent spam during auto-save
+            console.log('Auto-save completed silently');
         }
     } catch (error) {
         console.warn('Auto-save failed:', error);
@@ -1689,6 +1690,12 @@ saveState = function() {
     }
 };
 
+// Separate function for manual saves with notification
+function saveStateWithNotification() {
+    saveState();
+    showNotification('Değişiklik kaydedildi', 'success');
+}
+
 // Initialize modern features
 document.addEventListener('DOMContentLoaded', function() {
     enableAutoSave();
@@ -1985,20 +1992,28 @@ function addHighlightToOverlay(annotation) {
 // Image Upload Functions
 function loadImage(event) {
     const file = event.target.files[0];
-    if (!file) return;
+    if (!file) {
+        activateTool('cursor'); // Go back to cursor if no file selected
+        return;
+    }
     
     const reader = new FileReader();
     reader.onload = function(e) {
         currentImage = e.target.result;
         activateTool('image');
-        showNotification('Resim yüklendi. PDF üzerinde yerleştirmek için tıklayın.', 'info');
+        showNotification('Resim yüklendi! PDF üzerinde yerleştirmek için tıklayın.', 'success');
     };
     reader.readAsDataURL(file);
+    
+    // Clear the input value to allow selecting the same file again
+    event.target.value = '';
 }
 
 function addImageAnnotation(x, y) {
     if (!currentImage) {
+        showNotification('Önce bir resim yükleyin!', 'warning');
         document.getElementById('imageInput').click();
+        activateTool('cursor'); // Switch back to cursor to prevent repeated dialogs
         return;
     }
     
@@ -2018,6 +2033,7 @@ function addImageAnnotation(x, y) {
     saveState();
     showNotification('Resim eklendi', 'success');
     currentImage = null; // Reset after use
+    activateTool('cursor'); // Switch back to cursor after adding image
 }
 
 function addImageToOverlay(annotation) {
