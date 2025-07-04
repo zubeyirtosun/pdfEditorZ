@@ -131,15 +131,21 @@ async function loadPDF(event) {
         const arrayBuffer = await file.arrayBuffer();
         console.log('ArrayBuffer oluşturuldu, boyut:', arrayBuffer.byteLength);
         
+        // Create separate copies for each library to avoid detached ArrayBuffer error
+        const pdfJsBuffer = arrayBuffer.slice(); // Copy for PDF.js
+        const pdfLibBuffer = arrayBuffer.slice(); // Copy for PDF-lib
+        
+        console.log('ArrayBuffer kopyaları oluşturuldu');
+        
         // Load with PDF.js for display
         console.log('PDF.js ile yükleme başladı...');
-        pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+        pdfDoc = await pdfjsLib.getDocument(pdfJsBuffer).promise;
         pageCount = pdfDoc.numPages;
         console.log('PDF.js yükleme tamamlandı. Sayfa sayısı:', pageCount);
         
         // Load with PDF-lib for editing
         console.log('PDF-lib ile yükleme başladı...');
-        currentPdf = await PDFLib.PDFDocument.load(arrayBuffer);
+        currentPdf = await PDFLib.PDFDocument.load(pdfLibBuffer);
         console.log('PDF-lib yükleme tamamlandı');
         
         // Hide welcome screen and show PDF
@@ -533,11 +539,16 @@ async function deletePage() {
         
         // Reload the PDF to reflect changes
         const pdfBytes = await currentPdf.save();
-        const newPdf = await PDFLib.PDFDocument.load(pdfBytes);
+        
+        // Create separate copies for each library to avoid detached ArrayBuffer error
+        const pdfJsBytes = pdfBytes.slice();
+        const pdfLibBytes = pdfBytes.slice();
+        
+        const newPdf = await PDFLib.PDFDocument.load(pdfLibBytes);
         currentPdf = newPdf;
         
         // Reload for display
-        pdfDoc = await pdfjsLib.getDocument(pdfBytes).promise;
+        pdfDoc = await pdfjsLib.getDocument(pdfJsBytes).promise;
         renderPage(currentPageNum);
         updatePageInfo();
         
@@ -557,11 +568,16 @@ async function addBlankPage() {
         
         // Reload the PDF to reflect changes
         const pdfBytes = await currentPdf.save();
-        const newPdf = await PDFLib.PDFDocument.load(pdfBytes);
+        
+        // Create separate copies for each library to avoid detached ArrayBuffer error
+        const pdfJsBytes = pdfBytes.slice();
+        const pdfLibBytes = pdfBytes.slice();
+        
+        const newPdf = await PDFLib.PDFDocument.load(pdfLibBytes);
         currentPdf = newPdf;
         
         // Reload for display
-        pdfDoc = await pdfjsLib.getDocument(pdfBytes).promise;
+        pdfDoc = await pdfjsLib.getDocument(pdfJsBytes).promise;
         updatePageInfo();
         
         console.log('Boş sayfa eklendi');
@@ -635,7 +651,9 @@ async function applyAnnotations() {
                         try {
                             // Convert signature image to PDF format
                             const imageBytes = await fetch(annotation.image).then(res => res.arrayBuffer());
-                            const image = await currentPdf.embedPng(imageBytes);
+                            // Create a copy to avoid detached ArrayBuffer
+                            const imageBytesCopy = imageBytes.slice();
+                            const image = await currentPdf.embedPng(imageBytesCopy);
                             
                             page.drawImage(image, {
                                 x: pdfX,
