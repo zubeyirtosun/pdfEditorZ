@@ -24,6 +24,28 @@ let autoSaveEnabled = true;
 let lastSavedState = null;
 let annotationCounter = 0;
 
+// New features variables
+let isHighlighting = false;
+let highlightStart = null;
+let currentImage = null;
+let pdfMetadata = {
+    title: '',
+    author: '',
+    subject: '',
+    keywords: '',
+    creator: 'PDF EditorZ'
+};
+
+// Page reordering variables
+let originalPageOrder = [];
+let currentPageOrder = [];
+let isDraggingPage = false;
+let draggedPageIndex = -1;
+
+// OCR variables
+let isOCRRunning = false;
+let ocrWorker = null;
+
 // Check if libraries are loaded
 function checkLibraries() {
     console.log('Kütüphane kontrolü başlatılıyor...');
@@ -184,6 +206,15 @@ function drawAnnotation(annotation) {
     switch (annotation.type) {
         case 'text':
             drawTextAnnotation(annotation);
+            break;
+        case 'highlight':
+            addHighlightToOverlay(annotation);
+            break;
+        case 'image':
+            addImageToOverlay(annotation);
+            break;
+        case 'form':
+            addFormElementToOverlay(annotation);
             break;
         case 'draw':
             drawLineAnnotation(annotation);
@@ -666,9 +697,13 @@ function activateTool(tool) {
         activeTool = tool;
     }
     
-    // Special handling for signature tool
+    // Special handling for different tools
     if (tool === 'signature') {
         openSignatureModal();
+    } else if (tool === 'image' && !currentImage) {
+        // If image tool is activated but no image is loaded, open file dialog
+        document.getElementById('imageInput').click();
+        return;
     }
     
     // Update cursor based on tool
@@ -692,6 +727,12 @@ function updateCursor() {
         case 'text':
             canvas.style.cursor = 'text';
             break;
+        case 'highlight':
+            canvas.style.cursor = 'cell';
+            break;
+        case 'image':
+            canvas.style.cursor = 'copy';
+            break;
         case 'draw':
             canvas.style.cursor = 'crosshair';
             break;
@@ -705,7 +746,11 @@ function updateCursor() {
             canvas.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'20\' height=\'20\' viewBox=\'0 0 20 20\'><circle cx=\'10\' cy=\'10\' r=\'8\' stroke=\'%23ff4757\' stroke-width=\'2\' fill=\'none\'/></svg>") 10 10, crosshair';
             break;
         default:
-            canvas.style.cursor = 'default';
+            if (activeTool && activeTool.startsWith('form-')) {
+                canvas.style.cursor = 'crosshair';
+            } else {
+                canvas.style.cursor = 'default';
+            }
     }
 }
 
@@ -742,6 +787,9 @@ function handleCanvasClick(event) {
         case 'text':
             addModernTextAnnotation(x, y);
             break;
+        case 'image':
+            addImageAnnotation(x, y);
+            break;
         case 'signature':
             if (currentSignature) {
                 addSignature(x, y);
@@ -749,6 +797,13 @@ function handleCanvasClick(event) {
             break;
         case 'eraser':
             eraseAt(x, y);
+            break;
+        default:
+            // Handle form tools
+            if (activeTool && activeTool.startsWith('form-')) {
+                const formType = activeTool.replace('form-', '');
+                addFormElementAnnotation(x, y, formType);
+            }
             break;
     }
 }
@@ -777,6 +832,11 @@ function handleMouseDown(event) {
             // Cursor tool doesn't draw or create anything
             break;
             
+        case 'highlight':
+            startHighlight(event);
+            saveState(); // Save state before highlighting
+            break;
+            
         case 'draw':
             isDrawing = true;
             lastX = x;
@@ -803,6 +863,11 @@ function handleMouseMove(event) {
     const rect = canvas.getBoundingClientRect();
     const currentX = (event.clientX - rect.left) / currentScale;
     const currentY = (event.clientY - rect.top) / currentScale;
+    
+    // Update highlight selection
+    if (activeTool === 'highlight') {
+        updateHighlight(event);
+    }
     
     // Update eraser indicator (use screen coordinates for visual indicator)
     if (activeTool === 'eraser') {
@@ -840,6 +905,10 @@ function handleMouseUp(event) {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) / currentScale;
     const y = (event.clientY - rect.top) / currentScale;
+    
+    if (activeTool === 'highlight') {
+        finishHighlight(event);
+    }
     
     if (activeTool === 'shape' && isDrawingShape) {
         addShapeAnnotation(shapeStartX, shapeStartY, x, y);
@@ -1443,6 +1512,79 @@ async function applyAnnotations() {
                             console.log('Metin eklendi:', annotation.text);
                             break;
                         
+                        case 'highlight':
+                            // Add highlight rectangle
+                            page.drawRectangle({
+                                x: annotation.x,
+                                y: height - annotation.y - annotation.height,
+                                width: annotation.width,
+                                height: annotation.height,
+                                color: PDFLib.rgb(
+                                    parseInt(annotation.color.slice(1, 3), 16) / 255,
+                                    parseInt(annotation.color.slice(3, 5), 16) / 255,
+                                    parseInt(annotation.color.slice(5, 7), 16) / 255
+                                ),
+                                opacity: 0.3
+                            });
+                            console.log('Vurgulama eklendi');
+                            break;
+                        
+                        case 'image':
+                            if (annotation.image) {
+                                try {
+                                    const base64Data = annotation.image.split(',')[1];
+                                    const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+                                    
+                                    let image;
+                                    if (annotation.image.includes('data:image/png')) {
+                                        image = await currentPdf.embedPng(imageBytes);
+                                    } else {
+                                        image = await currentPdf.embedJpg(imageBytes);
+                                    }
+                                    
+                                    page.drawImage(image, {
+                                        x: annotation.x,
+                                        y: height - annotation.y - annotation.height,
+                                        width: annotation.width,
+                                        height: annotation.height
+                                    });
+                                    console.log('Resim eklendi');
+                                } catch (imgError) {
+                                    console.warn('Resim ekleme hatası:', imgError);
+                                }
+                            }
+                            break;
+                        
+                        case 'form':
+                            // Add form elements as text annotations for now
+                            const formFont = await currentPdf.embedFont(PDFLib.StandardFonts.Helvetica);
+                            let formText = '';
+                            
+                            switch (annotation.formType) {
+                                case 'checkbox':
+                                    formText = annotation.value ? '☑' : '☐';
+                                    break;
+                                case 'radio':
+                                    formText = annotation.value ? '●' : '○';
+                                    break;
+                                case 'textfield':
+                                    formText = annotation.value || 'Metin...';
+                                    break;
+                                case 'date':
+                                    formText = annotation.value || new Date().toLocaleDateString('tr-TR');
+                                    break;
+                            }
+                            
+                            page.drawText(formText, {
+                                x: annotation.x,
+                                y: height - annotation.y - 12,
+                                size: 12,
+                                color: PDFLib.rgb(0, 0, 0),
+                                font: formFont
+                            });
+                            console.log('Form elemanı eklendi:', annotation.formType);
+                            break;
+                        
                         case 'draw':
                             // Draw line using actual coordinates
                             page.drawLine({
@@ -1587,11 +1729,20 @@ function closeHelpModal() {
 window.addEventListener('click', function(event) {
     const signatureModal = document.getElementById('signatureModal');
     const helpModal = document.getElementById('helpModal');
+    const metadataModal = document.getElementById('metadataModal');
+    const pageReorderModal = document.getElementById('pageReorderModal');
+    const ocrModal = document.getElementById('ocrModal');
     
     if (event.target === signatureModal) {
         closeSignatureModal();
     } else if (event.target === helpModal) {
         closeHelpModal();
+    } else if (event.target === metadataModal) {
+        closeMetadataModal();
+    } else if (event.target === pageReorderModal) {
+        closePageReorderModal();
+    } else if (event.target === ocrModal) {
+        closeOCRModal();
     }
 });
 
@@ -1633,6 +1784,16 @@ document.addEventListener('keydown', function(event) {
         case 't':
             if (!event.ctrlKey && !event.metaKey) {
                 activateTool('text');
+            }
+            break;
+        case 'h':
+            if (!event.ctrlKey && !event.metaKey) {
+                activateTool('highlight');
+            }
+            break;
+        case 'i':
+            if (!event.ctrlKey && !event.metaKey) {
+                activateTool('image');
             }
             break;
         case 'd':
@@ -1711,4 +1872,826 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Set initial size value
     sizeValue.textContent = sizePicker.value + 'px';
-}); 
+});
+
+// Highlight Tool Functions
+function startHighlight(event) {
+    if (activeTool !== 'highlight') return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / currentScale;
+    const y = (event.clientY - rect.top) / currentScale;
+    
+    highlightStart = { x, y };
+    isHighlighting = true;
+    
+    // Create temporary highlight overlay
+    const highlightOverlay = document.createElement('div');
+    highlightOverlay.className = 'highlight-overlay';
+    highlightOverlay.id = 'tempHighlight';
+    highlightOverlay.style.left = event.clientX - rect.left + 'px';
+    highlightOverlay.style.top = event.clientY - rect.top + 'px';
+    highlightOverlay.style.width = '0px';
+    highlightOverlay.style.height = '0px';
+    
+    const container = document.getElementById('pdfContainer');
+    container.appendChild(highlightOverlay);
+}
+
+function updateHighlight(event) {
+    if (!isHighlighting || activeTool !== 'highlight') return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const currentX = event.clientX - rect.left;
+    const currentY = event.clientY - rect.top;
+    
+    const startX = highlightStart.x * currentScale;
+    const startY = highlightStart.y * currentScale;
+    
+    const width = Math.abs(currentX - startX);
+    const height = Math.abs(currentY - startY);
+    const left = Math.min(currentX, startX);
+    const top = Math.min(currentY, startY);
+    
+    const tempHighlight = document.getElementById('tempHighlight');
+    if (tempHighlight) {
+        tempHighlight.style.left = left + 'px';
+        tempHighlight.style.top = top + 'px';
+        tempHighlight.style.width = width + 'px';
+        tempHighlight.style.height = height + 'px';
+    }
+}
+
+function finishHighlight(event) {
+    if (!isHighlighting || activeTool !== 'highlight') return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const endX = (event.clientX - rect.left) / currentScale;
+    const endY = (event.clientY - rect.top) / currentScale;
+    
+    const width = Math.abs(endX - highlightStart.x);
+    const height = Math.abs(endY - highlightStart.y);
+    
+    // Only create highlight if area is significant
+    if (width > 10 && height > 10) {
+        const annotation = {
+            id: Date.now().toString(),
+            type: 'highlight',
+            page: currentPageNum,
+            x: Math.min(highlightStart.x, endX),
+            y: Math.min(highlightStart.y, endY),
+            width: width,
+            height: height,
+            color: colorPicker.value
+        };
+        
+        annotations.push(annotation);
+        addHighlightToOverlay(annotation);
+        saveState();
+        showNotification('Vurgulama eklendi', 'success');
+    }
+    
+    // Remove temporary highlight
+    const tempHighlight = document.getElementById('tempHighlight');
+    if (tempHighlight) {
+        tempHighlight.remove();
+    }
+    
+    isHighlighting = false;
+    highlightStart = null;
+}
+
+function addHighlightToOverlay(annotation) {
+    const highlightDiv = document.createElement('div');
+    highlightDiv.className = 'highlight-overlay';
+    highlightDiv.setAttribute('data-annotation-id', annotation.id);
+    highlightDiv.style.left = (annotation.x * currentScale) + 'px';
+    highlightDiv.style.top = (annotation.y * currentScale) + 'px';
+    highlightDiv.style.width = (annotation.width * currentScale) + 'px';
+    highlightDiv.style.height = (annotation.height * currentScale) + 'px';
+    highlightDiv.style.backgroundColor = annotation.color + '40'; // Add transparency
+    highlightDiv.style.border = '1px solid ' + annotation.color;
+    highlightDiv.style.pointerEvents = 'auto';
+    highlightDiv.style.cursor = 'move';
+    
+    // Add click handler for selection
+    highlightDiv.addEventListener('click', function() {
+        selectElement(highlightDiv, annotation);
+    });
+    
+    overlay.appendChild(highlightDiv);
+}
+
+// Image Upload Functions
+function loadImage(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        currentImage = e.target.result;
+        activateTool('image');
+        showNotification('Resim yüklendi. PDF üzerinde yerleştirmek için tıklayın.', 'info');
+    };
+    reader.readAsDataURL(file);
+}
+
+function addImageAnnotation(x, y) {
+    if (!currentImage) {
+        document.getElementById('imageInput').click();
+        return;
+    }
+    
+    const annotation = {
+        id: Date.now().toString(),
+        type: 'image',
+        page: currentPageNum,
+        x: x,
+        y: y,
+        width: 100, // Default width
+        height: 100, // Default height
+        image: currentImage
+    };
+    
+    annotations.push(annotation);
+    addImageToOverlay(annotation);
+    saveState();
+    showNotification('Resim eklendi', 'success');
+    currentImage = null; // Reset after use
+}
+
+function addImageToOverlay(annotation) {
+    const imageDiv = document.createElement('div');
+    imageDiv.className = 'image-annotation';
+    imageDiv.setAttribute('data-annotation-id', annotation.id);
+    imageDiv.style.left = (annotation.x * currentScale) + 'px';
+    imageDiv.style.top = (annotation.y * currentScale) + 'px';
+    imageDiv.style.width = (annotation.width * currentScale) + 'px';
+    imageDiv.style.height = (annotation.height * currentScale) + 'px';
+    
+    const img = document.createElement('img');
+    img.src = annotation.image;
+    img.draggable = false;
+    imageDiv.appendChild(img);
+    
+    // Add click handler for selection
+    imageDiv.addEventListener('click', function() {
+        selectElement(imageDiv, annotation);
+    });
+    
+    overlay.appendChild(imageDiv);
+}
+
+// Form Elements Functions
+function addFormElement(type) {
+    showNotification(`${getFormElementName(type)} eklemek için PDF üzerinde tıklayın.`, 'info');
+    activeTool = 'form-' + type;
+    updateCursor();
+}
+
+function getFormElementName(type) {
+    const names = {
+        'checkbox': 'Checkbox',
+        'radio': 'Radio Button',
+        'textfield': 'Metin Alanı',
+        'date': 'Tarih Alanı'
+    };
+    return names[type] || type;
+}
+
+function addFormElementAnnotation(x, y, formType) {
+    const annotation = {
+        id: Date.now().toString(),
+        type: 'form',
+        formType: formType,
+        page: currentPageNum,
+        x: x,
+        y: y,
+        width: getFormElementWidth(formType),
+        height: getFormElementHeight(formType),
+        value: getFormElementDefaultValue(formType)
+    };
+    
+    annotations.push(annotation);
+    addFormElementToOverlay(annotation);
+    saveState();
+    showNotification(`${getFormElementName(formType)} eklendi`, 'success');
+}
+
+function getFormElementWidth(type) {
+    const widths = {
+        'checkbox': 20,
+        'radio': 20,
+        'textfield': 120,
+        'date': 100
+    };
+    return widths[type] || 100;
+}
+
+function getFormElementHeight(type) {
+    const heights = {
+        'checkbox': 20,
+        'radio': 20,
+        'textfield': 24,
+        'date': 24
+    };
+    return heights[type] || 24;
+}
+
+function getFormElementDefaultValue(type) {
+    const defaults = {
+        'checkbox': false,
+        'radio': false,
+        'textfield': 'Metin...',
+        'date': new Date().toISOString().split('T')[0]
+    };
+    return defaults[type] || '';
+}
+
+function addFormElementToOverlay(annotation) {
+    const formDiv = document.createElement('div');
+    formDiv.className = `form-annotation ${annotation.formType}`;
+    formDiv.setAttribute('data-annotation-id', annotation.id);
+    formDiv.style.left = (annotation.x * currentScale) + 'px';
+    formDiv.style.top = (annotation.y * currentScale) + 'px';
+    formDiv.style.width = (annotation.width * currentScale) + 'px';
+    formDiv.style.height = (annotation.height * currentScale) + 'px';
+    
+    // Add content based on form type
+    if (annotation.formType === 'textfield') {
+        formDiv.textContent = annotation.value;
+    } else if (annotation.formType === 'date') {
+        formDiv.textContent = annotation.value;
+    }
+    
+    // Add click handler for selection
+    formDiv.addEventListener('click', function() {
+        selectElement(formDiv, annotation);
+    });
+    
+    overlay.appendChild(formDiv);
+}
+
+// PDF Metadata Functions
+function openMetadataModal() {
+    if (!currentPdf) {
+        showNotification('Önce bir PDF dosyası yükleyin!', 'error');
+        return;
+    }
+    
+    // Load current metadata
+    loadCurrentMetadata();
+    document.getElementById('metadataModal').style.display = 'block';
+}
+
+function closeMetadataModal() {
+    document.getElementById('metadataModal').style.display = 'none';
+}
+
+async function loadCurrentMetadata() {
+    try {
+        // Get current metadata from PDF
+        const metadata = await currentPdf.getMetadata();
+        
+        // Update form fields
+        document.getElementById('pdfTitle').value = metadata.title || '';
+        document.getElementById('pdfAuthor').value = metadata.author || '';
+        document.getElementById('pdfSubject').value = metadata.subject || '';
+        document.getElementById('pdfKeywords').value = metadata.keywords || '';
+        document.getElementById('pdfCreator').value = metadata.creator || '';
+        
+        // Update display
+        const currentMetadataDiv = document.getElementById('currentMetadata');
+        currentMetadataDiv.innerHTML = `
+            <div><strong>Başlık:</strong> ${metadata.title || 'Belirtilmemiş'}</div>
+            <div><strong>Yazar:</strong> ${metadata.author || 'Belirtilmemiş'}</div>
+            <div><strong>Konu:</strong> ${metadata.subject || 'Belirtilmemiş'}</div>
+            <div><strong>Anahtar Kelimeler:</strong> ${metadata.keywords || 'Belirtilmemiş'}</div>
+            <div><strong>Oluşturan:</strong> ${metadata.creator || 'Belirtilmemiş'}</div>
+            <div><strong>Oluşturma Tarihi:</strong> ${metadata.creationDate ? new Date(metadata.creationDate).toLocaleDateString('tr-TR') : 'Belirtilmemiş'}</div>
+        `;
+        
+        // Store in global variable
+        pdfMetadata = {
+            title: metadata.title || '',
+            author: metadata.author || '',
+            subject: metadata.subject || '',
+            keywords: metadata.keywords || '',
+            creator: metadata.creator || 'PDF EditorZ'
+        };
+        
+    } catch (error) {
+        console.warn('Metadata okunamadı:', error);
+        document.getElementById('currentMetadata').innerHTML = `
+            <p style="color: #dc3545;">Mevcut metadata bilgisi okunamadı.</p>
+        `;
+    }
+}
+
+function saveMetadata() {
+    try {
+        // Get values from form
+        pdfMetadata.title = document.getElementById('pdfTitle').value;
+        pdfMetadata.author = document.getElementById('pdfAuthor').value;
+        pdfMetadata.subject = document.getElementById('pdfSubject').value;
+        pdfMetadata.keywords = document.getElementById('pdfKeywords').value;
+        pdfMetadata.creator = document.getElementById('pdfCreator').value;
+        
+        // Update PDF metadata
+        currentPdf.setTitle(pdfMetadata.title);
+        currentPdf.setAuthor(pdfMetadata.author);
+        currentPdf.setSubject(pdfMetadata.subject);
+        currentPdf.setKeywords(pdfMetadata.keywords.split(',').map(k => k.trim()));
+        currentPdf.setCreator(pdfMetadata.creator);
+        currentPdf.setModificationDate(new Date());
+        
+        showNotification('PDF metadata başarıyla güncellendi!', 'success');
+        closeMetadataModal();
+        saveState();
+        
+    } catch (error) {
+        console.error('Metadata kaydetme hatası:', error);
+        showNotification('Metadata kaydedilirken bir hata oluştu: ' + error.message, 'error');
+    }
+}
+
+function resetMetadata() {
+    // Reset form to original values
+    loadCurrentMetadata();
+    showNotification('Metadata sıfırlandı', 'info');
+}
+
+// Page Reordering Functions
+function openPageReorderModal() {
+    if (!currentPdf || pageCount === 0) {
+        showNotification('Önce bir PDF dosyası yükleyin!', 'error');
+        return;
+    }
+    
+    // Initialize page order arrays
+    originalPageOrder = Array.from({length: pageCount}, (_, i) => i + 1);
+    currentPageOrder = [...originalPageOrder];
+    
+    // Generate page thumbnails
+    generatePageThumbnails();
+    
+    document.getElementById('pageReorderModal').style.display = 'block';
+}
+
+function closePageReorderModal() {
+    document.getElementById('pageReorderModal').style.display = 'none';
+    
+    // Clean up
+    const thumbnailsContainer = document.getElementById('pageThumbnails');
+    thumbnailsContainer.innerHTML = '';
+}
+
+async function generatePageThumbnails() {
+    const thumbnailsContainer = document.getElementById('pageThumbnails');
+    thumbnailsContainer.innerHTML = '';
+    
+    showNotification('Sayfa önizlemeleri oluşturuluyor...', 'info');
+    
+    for (let i = 1; i <= pageCount; i++) {
+        try {
+            const thumbnail = await createPageThumbnail(i);
+            thumbnailsContainer.appendChild(thumbnail);
+        } catch (error) {
+            console.error(`Sayfa ${i} thumbnail oluşturma hatası:`, error);
+        }
+    }
+    
+    // Add drag and drop event listeners
+    setupDragAndDrop();
+    showNotification('Sayfa önizlemeleri hazır', 'success');
+}
+
+async function createPageThumbnail(pageNum) {
+    const page = await pdfDoc.getPage(pageNum);
+    const scale = 0.3; // Small scale for thumbnails
+    const viewport = page.getViewport({ scale });
+    
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+    };
+    
+    await page.render(renderContext).promise;
+    
+    const thumbnailDiv = document.createElement('div');
+    thumbnailDiv.className = 'page-thumbnail';
+    thumbnailDiv.draggable = true;
+    thumbnailDiv.setAttribute('data-page', pageNum);
+    
+    thumbnailDiv.appendChild(canvas);
+    
+    const pageLabel = document.createElement('div');
+    pageLabel.className = 'page-number';
+    pageLabel.textContent = `Sayfa ${pageNum}`;
+    thumbnailDiv.appendChild(pageLabel);
+    
+    return thumbnailDiv;
+}
+
+function setupDragAndDrop() {
+    const thumbnails = document.querySelectorAll('.page-thumbnail');
+    
+    thumbnails.forEach((thumbnail, index) => {
+        thumbnail.addEventListener('dragstart', handleDragStart);
+        thumbnail.addEventListener('dragover', handleDragOver);
+        thumbnail.addEventListener('drop', handleDrop);
+        thumbnail.addEventListener('dragend', handleDragEnd);
+    });
+}
+
+function handleDragStart(e) {
+    isDraggingPage = true;
+    draggedPageIndex = parseInt(e.target.getAttribute('data-page')) - 1;
+    e.target.classList.add('drag-source');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    if (!e.target.classList.contains('page-thumbnail')) return;
+    
+    e.target.classList.add('drag-over');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    
+    if (!e.target.classList.contains('page-thumbnail')) return;
+    
+    const targetPageIndex = parseInt(e.target.getAttribute('data-page')) - 1;
+    
+    if (draggedPageIndex !== targetPageIndex) {
+        // Reorder the array
+        const draggedPage = currentPageOrder[draggedPageIndex];
+        currentPageOrder.splice(draggedPageIndex, 1);
+        currentPageOrder.splice(targetPageIndex, 0, draggedPage);
+        
+        // Update visual order
+        updateThumbnailOrder();
+    }
+    
+    // Clean up drag states
+    document.querySelectorAll('.page-thumbnail').forEach(thumb => {
+        thumb.classList.remove('drag-over', 'drag-source');
+    });
+}
+
+function handleDragEnd(e) {
+    isDraggingPage = false;
+    draggedPageIndex = -1;
+    
+    // Clean up all drag states
+    document.querySelectorAll('.page-thumbnail').forEach(thumb => {
+        thumb.classList.remove('drag-over', 'drag-source');
+    });
+}
+
+function updateThumbnailOrder() {
+    const container = document.getElementById('pageThumbnails');
+    const thumbnails = Array.from(container.children);
+    
+    // Reorder thumbnails based on currentPageOrder
+    currentPageOrder.forEach((pageNum, index) => {
+        const thumbnail = thumbnails.find(t => parseInt(t.getAttribute('data-page')) === pageNum);
+        if (thumbnail) {
+            container.appendChild(thumbnail);
+            
+            // Update page number display
+            const pageLabel = thumbnail.querySelector('.page-number');
+            pageLabel.textContent = `Sayfa ${index + 1}`;
+        }
+    });
+}
+
+async function applyPageReorder() {
+    if (JSON.stringify(currentPageOrder) === JSON.stringify(originalPageOrder)) {
+        showNotification('Sayfa sırası değişmemiş', 'info');
+        closePageReorderModal();
+        return;
+    }
+    
+    try {
+        showNotification('Sayfa sırası uygulanıyor...', 'info');
+        
+        // Create new PDF with reordered pages
+        const newPdf = await PDFLib.PDFDocument.create();
+        
+        for (const pageNum of currentPageOrder) {
+            const [copiedPage] = await newPdf.copyPages(currentPdf, [pageNum - 1]);
+            newPdf.addPage(copiedPage);
+        }
+        
+        // Copy metadata
+        if (pdfMetadata.title) newPdf.setTitle(pdfMetadata.title);
+        if (pdfMetadata.author) newPdf.setAuthor(pdfMetadata.author);
+        if (pdfMetadata.subject) newPdf.setSubject(pdfMetadata.subject);
+        if (pdfMetadata.creator) newPdf.setCreator(pdfMetadata.creator);
+        
+        // Replace current PDF
+        currentPdf = newPdf;
+        
+        // Update page count and reset to first page
+        const pages = currentPdf.getPages();
+        pageCount = pages.length;
+        currentPageNum = 1;
+        
+        // Re-render PDF
+        await renderPage(currentPageNum);
+        updatePageInfo();
+        
+        // Update annotations page numbers
+        updateAnnotationsAfterReorder();
+        
+        saveState();
+        closePageReorderModal();
+        showNotification(`Sayfa sırası başarıyla güncellendi! ${pageCount} sayfa yeniden sıralandı.`, 'success');
+        
+    } catch (error) {
+        console.error('Sayfa sıralama hatası:', error);
+        showNotification('Sayfa sırası uygulanırken bir hata oluştu: ' + error.message, 'error');
+    }
+}
+
+function updateAnnotationsAfterReorder() {
+    // Update annotation page numbers according to new order
+    annotations.forEach(annotation => {
+        const oldPageIndex = annotation.page - 1;
+        const newPageIndex = currentPageOrder.indexOf(originalPageOrder[oldPageIndex]);
+        if (newPageIndex !== -1) {
+            annotation.page = newPageIndex + 1;
+        }
+    });
+}
+
+function resetPageOrder() {
+    currentPageOrder = [...originalPageOrder];
+    updateThumbnailOrder();
+    showNotification('Sayfa sırası sıfırlandı', 'info');
+}
+
+// OCR Functions
+async function performOCR() {
+    if (!currentPdf || pageCount === 0) {
+        showNotification('Önce bir PDF dosyası yükleyin!', 'error');
+        return;
+    }
+    
+    if (isOCRRunning) {
+        showNotification('OCR işlemi zaten çalışıyor...', 'warning');
+        return;
+    }
+    
+    openOCRModal();
+    await startOCRProcess();
+}
+
+function openOCRModal() {
+    document.getElementById('ocrModal').style.display = 'block';
+    
+    // Reset modal state
+    document.getElementById('ocrResults').style.display = 'none';
+    document.getElementById('ocrText').value = '';
+    updateOCRProgress('OCR başlatılıyor...', 0);
+}
+
+function closeOCRModal() {
+    document.getElementById('ocrModal').style.display = 'none';
+    
+    // Stop OCR if running
+    if (isOCRRunning && ocrWorker) {
+        ocrWorker.terminate();
+        ocrWorker = null;
+        isOCRRunning = false;
+    }
+}
+
+async function startOCRProcess() {
+    isOCRRunning = true;
+    
+    try {
+        updateOCRProgress('Tesseract.js yükleniyor...', 10);
+        
+        // Initialize Tesseract worker
+        ocrWorker = await Tesseract.createWorker('tur+eng', 1, {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    const progress = Math.round(m.progress * 80) + 10; // 10-90%
+                    updateOCRProgress(`Sayfa ${currentPageNum} taranıyor... ${Math.round(m.progress * 100)}%`, progress);
+                }
+            }
+        });
+        
+        updateOCRProgress('OCR motoru hazırlandı', 20);
+        
+        let allText = '';
+        let processedPages = 0;
+        
+        // Process current page or all pages based on user preference
+        const processAllPages = confirm('Tüm sayfaları taramak istiyor musunuz? (İptal = Sadece mevcut sayfa)');
+        const pagesToProcess = processAllPages ? pageCount : 1;
+        const startPage = processAllPages ? 1 : currentPageNum;
+        
+        for (let i = 0; i < pagesToProcess; i++) {
+            const pageNum = startPage + i;
+            const pageProgress = 20 + (i / pagesToProcess) * 70;
+            
+            updateOCRProgress(`Sayfa ${pageNum} işleniyor...`, pageProgress);
+            
+            try {
+                const pageText = await extractTextFromPage(pageNum);
+                if (pageText.trim()) {
+                    allText += `\n--- Sayfa ${pageNum} ---\n${pageText}\n`;
+                }
+                
+                processedPages++;
+            } catch (pageError) {
+                console.warn(`Sayfa ${pageNum} OCR hatası:`, pageError);
+                allText += `\n--- Sayfa ${pageNum} ---\nBu sayfada metin tanınamadı.\n`;
+            }
+        }
+        
+        updateOCRProgress('OCR tamamlandı!', 100);
+        
+        // Show results
+        setTimeout(() => {
+            showOCRResults(allText, processedPages);
+        }, 500);
+        
+    } catch (error) {
+        console.error('OCR hatası:', error);
+        updateOCRProgress('OCR işlemi başarısız oldu', 0);
+        showNotification('OCR işlemi sırasında bir hata oluştu: ' + error.message, 'error');
+    } finally {
+        isOCRRunning = false;
+        if (ocrWorker) {
+            await ocrWorker.terminate();
+            ocrWorker = null;
+        }
+    }
+}
+
+async function extractTextFromPage(pageNum) {
+    // Get page as canvas
+    const page = await pdfDoc.getPage(pageNum);
+    const scale = 2.0; // Higher scale for better OCR accuracy
+    const viewport = page.getViewport({ scale });
+    
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+    };
+    
+    await page.render(renderContext).promise;
+    
+    // Convert canvas to image data for OCR
+    const imageData = canvas.toDataURL('image/png');
+    
+    // Perform OCR
+    const { data: { text } } = await ocrWorker.recognize(imageData);
+    
+    return text;
+}
+
+function updateOCRProgress(text, percentage) {
+    document.getElementById('ocrStatus').textContent = text;
+    document.getElementById('ocrProgressText').textContent = text;
+    document.getElementById('ocrProgressFill').style.width = percentage + '%';
+}
+
+function showOCRResults(text, processedPages) {
+    document.getElementById('ocrText').value = text;
+    document.getElementById('ocrResults').style.display = 'block';
+    
+    const statusEl = document.getElementById('ocrStatus');
+    statusEl.innerHTML = `<i class="fas fa-check-circle" style="color: #28a745;"></i> OCR Tamamlandı!`;
+    
+    document.getElementById('ocrProgressText').textContent = `${processedPages} sayfa başarıyla işlendi`;
+    
+    showNotification(`OCR tamamlandı! ${processedPages} sayfa işlendi.`, 'success');
+}
+
+function addOCRTextToPDF() {
+    const text = document.getElementById('ocrText').value;
+    
+    if (!text.trim()) {
+        showNotification('Eklenecek metin bulunamadı!', 'warning');
+        return;
+    }
+    
+    // Add text as annotation to current page
+    const lines = text.split('\n').filter(line => line.trim());
+    let yOffset = 50;
+    const lineHeight = 20;
+    
+    lines.forEach((line, index) => {
+        if (line.trim() && !line.startsWith('---')) {
+            const annotation = {
+                id: Date.now().toString() + '-' + index,
+                type: 'text',
+                page: currentPageNum,
+                x: 50,
+                y: yOffset,
+                text: line.trim(),
+                size: 12,
+                color: '#000000'
+            };
+            
+            annotations.push(annotation);
+            addModernTextElement(annotation);
+            yOffset += lineHeight;
+        }
+    });
+    
+    saveState();
+    closeOCRModal();
+    showNotification(`${lines.length} satır metin PDF'e eklendi!`, 'success');
+}
+
+function copyOCRText() {
+    const text = document.getElementById('ocrText').value;
+    
+    if (!text.trim()) {
+        showNotification('Kopyalanacak metin bulunamadı!', 'warning');
+        return;
+    }
+    
+    navigator.clipboard.writeText(text).then(() => {
+        showNotification('Metin panoya kopyalandı!', 'success');
+    }).catch(err => {
+        console.error('Kopyalama hatası:', err);
+        showNotification('Metin kopyalanamadı', 'error');
+    });
+}
+
+async function autoExtractText() {
+    if (!currentPdf || pageCount === 0) {
+        showNotification('Önce bir PDF dosyası yükleyin!', 'error');
+        return;
+    }
+    
+    try {
+        showNotification('PDF\'den metin çıkarılıyor...', 'info');
+        
+        // Try to extract text using PDF.js text content
+        const page = await pdfDoc.getPage(currentPageNum);
+        const textContent = await page.getTextContent();
+        
+        let extractedText = '';
+        textContent.items.forEach(item => {
+            extractedText += item.str + ' ';
+        });
+        
+        if (extractedText.trim()) {
+            // Add extracted text to modal
+            document.getElementById('ocrText').value = extractedText;
+            document.getElementById('ocrResults').style.display = 'block';
+            document.getElementById('ocrStatus').innerHTML = '<i class="fas fa-check-circle" style="color: #28a745;"></i> Metin Çıkarıldı!';
+            document.getElementById('ocrProgressText').textContent = 'PDF\'den mevcut metin çıkarıldı';
+            document.getElementById('ocrProgressFill').style.width = '100%';
+            
+            openOCRModal();
+            showNotification('PDF\'den metin başarıyla çıkarıldı!', 'success');
+        } else {
+            showNotification('Bu sayfada çıkarılabilir metin bulunamadı. OCR tarama deneyin.', 'warning');
+        }
+        
+    } catch (error) {
+        console.error('Metin çıkarma hatası:', error);
+        showNotification('Metin çıkarma işlemi başarısız oldu. OCR tarama deneyin.', 'error');
+    }
+}
+
+function addModernTextElement(annotation) {
+    const textDiv = document.createElement('div');
+    textDiv.className = 'text-annotation';
+    textDiv.setAttribute('data-annotation-id', annotation.id);
+    textDiv.style.left = (annotation.x * currentScale) + 'px';
+    textDiv.style.top = (annotation.y * currentScale) + 'px';
+    textDiv.style.fontSize = (annotation.size * currentScale) + 'px';
+    textDiv.style.color = annotation.color;
+    textDiv.textContent = annotation.text;
+    
+    // Add click handler for selection
+    textDiv.addEventListener('click', function() {
+        selectElement(textDiv, annotation);
+    });
+    
+    overlay.appendChild(textDiv);
+} 

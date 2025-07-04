@@ -17,6 +17,9 @@
             crossorigin="anonymous"
             onerror="this.src='https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js'">
     </script>
+    
+    <!-- OCR Support -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
     <!-- Header -->
@@ -66,6 +69,14 @@
                     <i class="fas fa-font"></i>
                     Metin
                 </button>
+                <button class="tool-btn" id="highlightTool" onclick="activateTool('highlight')" title="Vurgulama (H)">
+                    <i class="fas fa-highlighter"></i>
+                    Vurgula
+                </button>
+                <button class="tool-btn" id="imageTool" onclick="activateTool('image')" title="Resim Ekle (I)">
+                    <i class="fas fa-image"></i>
+                    Resim
+                </button>
                 <button class="tool-btn" id="signatureTool" onclick="activateTool('signature')" title="İmza Ekle">
                     <i class="fas fa-signature"></i>
                     İmza
@@ -78,6 +89,7 @@
                     <i class="fas fa-eraser"></i>
                     Silgi
                 </button>
+                <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="loadImage(event)">
             </div>
 
             <div class="tool-section">
@@ -123,6 +135,26 @@
                     <i class="fas fa-plus"></i>
                     Boş Sayfa
                 </button>
+                <button class="tool-btn" onclick="openPageReorderModal()">
+                    <i class="fas fa-sort"></i>
+                    Sayfa Sırala
+                </button>
+                <button class="tool-btn" onclick="openMetadataModal()">
+                    <i class="fas fa-info-circle"></i>
+                    PDF Bilgileri
+                </button>
+            </div>
+
+            <div class="tool-section">
+                <h3><i class="fas fa-eye"></i> OCR & Tanıma</h3>
+                <button class="tool-btn" onclick="performOCR()" title="Metin Tanıma">
+                    <i class="fas fa-text-width"></i>
+                    OCR Tarama
+                </button>
+                <button class="tool-btn" onclick="autoExtractText()" title="Otomatik Metin Çıkarma">
+                    <i class="fas fa-magic"></i>
+                    Metin Çıkar
+                </button>
             </div>
 
             <div class="tool-section">
@@ -135,6 +167,28 @@
                     <label>Boyut:</label>
                     <input type="range" id="sizePicker" min="8" max="72" value="16">
                     <span id="sizeValue">16px</span>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h3><i class="fas fa-wpforms"></i> Form Elemanları</h3>
+                <div class="form-elements">
+                    <button class="tool-btn" onclick="addFormElement('checkbox')" title="Checkbox Ekle">
+                        <i class="fas fa-check-square"></i>
+                        Checkbox
+                    </button>
+                    <button class="tool-btn" onclick="addFormElement('radio')" title="Radio Button Ekle">
+                        <i class="fas fa-dot-circle"></i>
+                        Radio
+                    </button>
+                    <button class="tool-btn" onclick="addFormElement('textfield')" title="Metin Alanı Ekle">
+                        <i class="fas fa-edit"></i>
+                        Metin Alanı
+                    </button>
+                    <button class="tool-btn" onclick="addFormElement('date')" title="Tarih Alanı Ekle">
+                        <i class="fas fa-calendar"></i>
+                        Tarih
+                    </button>
                 </div>
             </div>
 
@@ -155,6 +209,14 @@
                 <div class="shortcut-item">
                     <span>Metin</span>
                     <span class="shortcut-key">T</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Vurgula</span>
+                    <span class="shortcut-key">H</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Resim</span>
+                    <span class="shortcut-key">I</span>
                 </div>
                 <div class="shortcut-item">
                     <span>Çizim</span>
@@ -213,12 +275,36 @@
                                 <span>Metin Ekleme</span>
                             </div>
                             <div class="feature">
+                                <i class="fas fa-highlighter"></i>
+                                <span>Vurgulama</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-image"></i>
+                                <span>Resim Ekleme</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-wpforms"></i>
+                                <span>Form Elemanları</span>
+                            </div>
+                            <div class="feature">
                                 <i class="fas fa-pen"></i>
                                 <span>Çizim Araçları</span>
                             </div>
                             <div class="feature">
+                                <i class="fas fa-sort"></i>
+                                <span>Sayfa Sıralama</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-text-width"></i>
+                                <span>OCR Tarama</span>
+                            </div>
+                            <div class="feature">
                                 <i class="fas fa-cogs"></i>
                                 <span>Sayfa İşlemleri</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-info-circle"></i>
+                                <span>PDF Metadata</span>
                             </div>
                         </div>
                     </div>
@@ -289,6 +375,21 @@
                 </div>
                 
                 <div class="help-section">
+                    <h4><i class="fas fa-highlighter"></i> Vurgulama</h4>
+                    <p>Vurgulama aracını seçin, sürükleyerek alan seçin ve metni vurgulayın.</p>
+                </div>
+                
+                <div class="help-section">
+                    <h4><i class="fas fa-image"></i> Resim Ekleme</h4>
+                    <p>Resim aracını seçin, bilgisayarınızdan resim yükleyin ve PDF'e yerleştirin.</p>
+                </div>
+                
+                <div class="help-section">
+                    <h4><i class="fas fa-wpforms"></i> Form Elemanları</h4>
+                    <p>Checkbox, radio button, metin alanı ve tarih alanı ekleyebilirsiniz.</p>
+                </div>
+                
+                <div class="help-section">
                     <h4><i class="fas fa-signature"></i> Dijital İmza</h4>
                     <p>İmza aracını seçin, imzanızı çizin veya yazın, sonra PDF'e yerleştirin.</p>
                 </div>
@@ -296,6 +397,139 @@
                 <div class="help-section">
                     <h4><i class="fas fa-pen"></i> Çizim</h4>
                     <p>Çizim aracı ile PDF üzerinde serbest çizim yapabilirsiniz.</p>
+                </div>
+                
+                <div class="help-section">
+                    <h4><i class="fas fa-sort"></i> Sayfa Sıralama</h4>
+                    <p>Sayfaları sürükleyerek yeniden sıralayabilir, sayfa sırasını değiştirebilirsiniz.</p>
+                </div>
+                
+                <div class="help-section">
+                    <h4><i class="fas fa-text-width"></i> OCR Metin Tanıma</h4>
+                    <p>Taranmış PDF'lerden veya görsellerden metni otomatik olarak tanıyabilir ve PDF'e ekleyebilirsiniz.</p>
+                </div>
+                
+                <div class="help-section">
+                    <h4><i class="fas fa-info-circle"></i> PDF Bilgileri</h4>
+                    <p>PDF metadata bilgilerini (başlık, yazar, konu vb.) düzenleyebilirsiniz.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDF Metadata Modal -->
+    <div class="modal" id="metadataModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>PDF Bilgileri ve Metadata</h3>
+                <button class="close-btn" onclick="closeMetadataModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="metadata-form">
+                    <div class="form-group">
+                        <label for="pdfTitle">Başlık:</label>
+                        <input type="text" id="pdfTitle" placeholder="PDF başlığını girin...">
+                    </div>
+                    <div class="form-group">
+                        <label for="pdfAuthor">Yazar:</label>
+                        <input type="text" id="pdfAuthor" placeholder="Yazar adını girin...">
+                    </div>
+                    <div class="form-group">
+                        <label for="pdfSubject">Konu:</label>
+                        <input type="text" id="pdfSubject" placeholder="PDF konusunu girin...">
+                    </div>
+                    <div class="form-group">
+                        <label for="pdfKeywords">Anahtar Kelimeler:</label>
+                        <input type="text" id="pdfKeywords" placeholder="Anahtar kelimeleri virgülle ayırın...">
+                    </div>
+                    <div class="form-group">
+                        <label for="pdfCreator">Oluşturan:</label>
+                        <input type="text" id="pdfCreator" placeholder="Oluşturan uygulamayı girin...">
+                    </div>
+                    <div class="metadata-info">
+                        <h4>Mevcut Bilgiler:</h4>
+                        <div id="currentMetadata">
+                            <p>PDF yüklendiğinde burada görünecek...</p>
+                        </div>
+                    </div>
+                    <div class="metadata-controls">
+                        <button class="primary-btn" onclick="saveMetadata()">
+                            <i class="fas fa-save"></i>
+                            Bilgileri Kaydet
+                        </button>
+                        <button class="secondary-btn" onclick="resetMetadata()">
+                            <i class="fas fa-undo"></i>
+                            Sıfırla
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page Reorder Modal -->
+    <div class="modal" id="pageReorderModal">
+        <div class="modal-content large-modal">
+            <div class="modal-header">
+                <h3>Sayfa Sıralaması</h3>
+                <button class="close-btn" onclick="closePageReorderModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="reorder-instructions">
+                    <p><i class="fas fa-info-circle"></i> Sayfaları sürükleyerek yeniden sıralayın</p>
+                </div>
+                <div class="page-thumbnails-container">
+                    <div id="pageThumbnails" class="page-thumbnails">
+                        <!-- Page thumbnails will be inserted here -->
+                    </div>
+                </div>
+                <div class="reorder-controls">
+                    <button class="primary-btn" onclick="applyPageReorder()">
+                        <i class="fas fa-check"></i>
+                        Sıralamayı Uygula
+                    </button>
+                    <button class="secondary-btn" onclick="resetPageOrder()">
+                        <i class="fas fa-undo"></i>
+                        Sıfırla
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- OCR Progress Modal -->
+    <div class="modal" id="ocrModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>OCR Metin Tanıma</h3>
+                <button class="close-btn" onclick="closeOCRModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="ocr-progress">
+                    <div class="progress-info">
+                        <h4 id="ocrStatus">OCR başlatılıyor...</h4>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="ocrProgressFill"></div>
+                        </div>
+                        <p id="ocrProgressText">İşlem başlatılıyor...</p>
+                    </div>
+                    
+                    <div class="ocr-results" id="ocrResults" style="display: none;">
+                        <h4>Tanınan Metin:</h4>
+                        <div class="ocr-text-container">
+                            <textarea id="ocrText" rows="10" readonly></textarea>
+                        </div>
+                        <div class="ocr-controls">
+                            <button class="primary-btn" onclick="addOCRTextToPDF()">
+                                <i class="fas fa-plus"></i>
+                                PDF'e Metin Ekle
+                            </button>
+                            <button class="secondary-btn" onclick="copyOCRText()">
+                                <i class="fas fa-copy"></i>
+                                Metni Kopyala
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
