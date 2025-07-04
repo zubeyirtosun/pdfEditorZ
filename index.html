@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF EditorZ - Güçlü PDF Düzenleme Aracı</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="logo">
+                <i class="fas fa-file-pdf"></i>
+                <span>PDF EditorZ</span>
+            </div>
+            <nav class="nav">
+                <button class="nav-btn" onclick="showHelp()">
+                    <i class="fas fa-question-circle"></i>
+                    Yardım
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="tool-section">
+                <h3><i class="fas fa-upload"></i> Dosya</h3>
+                <button class="tool-btn" onclick="document.getElementById('pdfInput').click()">
+                    <i class="fas fa-file-upload"></i>
+                    PDF Yükle
+                </button>
+                <button class="tool-btn" onclick="downloadPDF()">
+                    <i class="fas fa-download"></i>
+                    PDF İndir
+                </button>
+                <input type="file" id="pdfInput" accept=".pdf" style="display: none;" onchange="loadPDF(event)">
+            </div>
+
+            <div class="tool-section">
+                <h3><i class="fas fa-edit"></i> Düzenleme</h3>
+                <button class="tool-btn" id="textTool" onclick="activateTool('text')">
+                    <i class="fas fa-font"></i>
+                    Metin Ekle
+                </button>
+                <button class="tool-btn" id="signatureTool" onclick="activateTool('signature')">
+                    <i class="fas fa-signature"></i>
+                    İmza Ekle
+                </button>
+                <button class="tool-btn" id="drawTool" onclick="activateTool('draw')">
+                    <i class="fas fa-pen"></i>
+                    Çizim
+                </button>
+                <button class="tool-btn" id="shapeTool" onclick="activateTool('shape')">
+                    <i class="fas fa-shapes"></i>
+                    Şekil
+                </button>
+            </div>
+
+            <div class="tool-section">
+                <h3><i class="fas fa-cogs"></i> Sayfa İşlemleri</h3>
+                <button class="tool-btn" onclick="rotatePage()">
+                    <i class="fas fa-redo"></i>
+                    Döndür
+                </button>
+                <button class="tool-btn" onclick="deletePage()">
+                    <i class="fas fa-trash"></i>
+                    Sayfa Sil
+                </button>
+                <button class="tool-btn" onclick="addBlankPage()">
+                    <i class="fas fa-plus"></i>
+                    Boş Sayfa
+                </button>
+            </div>
+
+            <div class="tool-section">
+                <h3><i class="fas fa-palette"></i> Özelleştirme</h3>
+                <div class="color-picker-container">
+                    <label>Renk:</label>
+                    <input type="color" id="colorPicker" value="#000000">
+                </div>
+                <div class="size-picker-container">
+                    <label>Boyut:</label>
+                    <input type="range" id="sizePicker" min="8" max="72" value="16">
+                    <span id="sizeValue">16px</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="content">
+            <div class="content-header">
+                <div class="page-info">
+                    <span id="pageInfo">Sayfa: - / -</span>
+                </div>
+                <div class="zoom-controls">
+                    <button onclick="zoomOut()"><i class="fas fa-search-minus"></i></button>
+                    <span id="zoomLevel">100%</span>
+                    <button onclick="zoomIn()"><i class="fas fa-search-plus"></i></button>
+                </div>
+            </div>
+
+            <div class="pdf-container" id="pdfContainer">
+                <div class="welcome-screen" id="welcomeScreen">
+                    <div class="welcome-content">
+                        <i class="fas fa-file-pdf welcome-icon"></i>
+                        <h2>PDF EditorZ'e Hoş Geldiniz!</h2>
+                        <p>Güçlü PDF düzenleme araçları ile belgelerinizi kolayca düzenleyin</p>
+                        <button class="primary-btn" onclick="document.getElementById('pdfInput').click()">
+                            <i class="fas fa-upload"></i>
+                            İlk PDF'inizi Yükleyin
+                        </button>
+                        
+                        <div class="features">
+                            <div class="feature">
+                                <i class="fas fa-signature"></i>
+                                <span>Dijital İmza</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-font"></i>
+                                <span>Metin Ekleme</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-pen"></i>
+                                <span>Çizim Araçları</span>
+                            </div>
+                            <div class="feature">
+                                <i class="fas fa-cogs"></i>
+                                <span>Sayfa İşlemleri</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <canvas id="pdfCanvas" style="display: none;"></canvas>
+                <div class="pdf-overlay" id="pdfOverlay"></div>
+            </div>
+
+            <div class="page-navigation" id="pageNavigation" style="display: none;">
+                <button onclick="previousPage()"><i class="fas fa-chevron-left"></i></button>
+                <input type="number" id="pageInput" min="1" onchange="goToPage(this.value)">
+                <button onclick="nextPage()"><i class="fas fa-chevron-right"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signature Modal -->
+    <div class="modal" id="signatureModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>İmza Oluşturun</h3>
+                <button class="close-btn" onclick="closeSignatureModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="signature-tabs">
+                    <button class="tab-btn active" onclick="switchSignatureTab('draw')">Çizim</button>
+                    <button class="tab-btn" onclick="switchSignatureTab('type')">Yazı</button>
+                </div>
+                
+                <div id="drawTab" class="signature-tab active">
+                    <canvas id="signatureCanvas" width="400" height="200"></canvas>
+                    <div class="signature-controls">
+                        <button onclick="clearSignature()">Temizle</button>
+                        <button onclick="saveSignature()">İmzayı Kaydet</button>
+                    </div>
+                </div>
+                
+                <div id="typeTab" class="signature-tab">
+                    <input type="text" id="signatureText" placeholder="İmzanızı yazın...">
+                    <select id="signatureFont">
+                        <option value="cursive">El Yazısı</option>
+                        <option value="serif">Serif</option>
+                        <option value="sans-serif">Sans Serif</option>
+                    </select>
+                    <button onclick="saveTypedSignature()">İmzayı Kaydet</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="modal" id="helpModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Yardım ve Kullanım Kılavuzu</h3>
+                <button class="close-btn" onclick="closeHelpModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="help-section">
+                    <h4><i class="fas fa-upload"></i> PDF Yükleme</h4>
+                    <p>"PDF Yükle" butonuna tıklayarak bilgisayarınızdan PDF dosyası seçin.</p>
+                </div>
+                
+                <div class="help-section">
+                    <h4><i class="fas fa-font"></i> Metin Ekleme</h4>
+                    <p>Metin aracını seçin ve PDF üzerinde istediğiniz yere tıklayarak metin ekleyin.</p>
+                </div>
+                
+                <div class="help-section">
+                    <h4><i class="fas fa-signature"></i> Dijital İmza</h4>
+                    <p>İmza aracını seçin, imzanızı çizin veya yazın, sonra PDF'e yerleştirin.</p>
+                </div>
+                
+                <div class="help-section">
+                    <h4><i class="fas fa-pen"></i> Çizim</h4>
+                    <p>Çizim aracı ile PDF üzerinde serbest çizim yapabilirsiniz.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
