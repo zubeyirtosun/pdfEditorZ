@@ -319,14 +319,18 @@ function drawArrow(x1, y1, x2, y2) {
 function selectElement(element, annotation) {
     // Deselect previous element
     if (selectedElement) {
-        selectedElement.style.border = '1px dashed transparent';
+        selectedElement.classList.remove('selected');
+        selectedElement.style.border = '2px solid transparent';
     }
     
     selectedElement = element;
-    element.style.border = '1px dashed #667eea';
+    element.classList.add('selected');
     
-    // Add resize handles if needed
-    addResizeHandles(element, annotation);
+    // Add resize handles for resizable elements (images, forms)
+    if (element.classList.contains('image-annotation') || 
+        element.classList.contains('form-annotation')) {
+        addResizeHandles(element, annotation);
+    }
 }
 
 function editText(element, annotation) {
@@ -816,13 +820,14 @@ function handleCanvasClick(event) {
 function deselectAllElements() {
     // Deselect any selected elements
     if (selectedElement) {
-        selectedElement.style.border = '1px dashed transparent';
+        selectedElement.classList.remove('selected');
+        selectedElement.style.border = '2px solid transparent';
         selectedElement = null;
         document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
     }
     
-    // Clear any active selections
-    document.querySelectorAll('.text-annotation.selected').forEach(element => {
+    // Clear any active selections from all annotation types
+    document.querySelectorAll('.text-annotation.selected, .image-annotation.selected, .form-annotation.selected').forEach(element => {
         element.classList.remove('selected');
     });
 }
@@ -931,12 +936,32 @@ function handleMouseUp(event) {
 
 // Overlay event handlers for drag and drop
 function handleOverlayMouseDown(event) {
-    if (event.target.classList.contains('text-annotation')) {
+    // Check if target is draggable annotation
+    if (event.target.classList.contains('text-annotation') || 
+        event.target.classList.contains('image-annotation') ||
+        event.target.classList.contains('form-annotation') ||
+        event.target.parentElement?.classList.contains('image-annotation')) {
+        
+        // Get the annotation element (handle img inside image-annotation)
+        const element = event.target.classList.contains('image-annotation') ? 
+                       event.target : 
+                       (event.target.parentElement?.classList.contains('image-annotation') ? 
+                        event.target.parentElement : event.target);
+        
         isDragging = true;
+        selectedElement = element; // Set as selected element
+        
         const rect = overlay.getBoundingClientRect();
-        dragOffset.x = (event.clientX - rect.left - parseInt(event.target.style.left)) / currentScale;
-        dragOffset.y = (event.clientY - rect.top - parseInt(event.target.style.top)) / currentScale;
+        dragOffset.x = (event.clientX - rect.left - parseInt(element.style.left)) / currentScale;
+        dragOffset.y = (event.clientY - rect.top - parseInt(element.style.top)) / currentScale;
         event.preventDefault();
+        
+        // Show selection for the element
+        const annotationId = element.getAttribute('data-annotation-id');
+        const annotation = annotations.find(a => a.id === annotationId);
+        if (annotation) {
+            selectElement(element, annotation);
+        }
     }
 }
 
@@ -1889,7 +1914,8 @@ document.addEventListener('keydown', function(event) {
         case 'Escape':
             // Deselect current selection
             if (selectedElement) {
-                selectedElement.style.border = '1px dashed transparent';
+                selectedElement.classList.remove('selected');
+                selectedElement.style.border = '2px solid transparent';
                 selectedElement = null;
                 document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
             }
@@ -1907,6 +1933,7 @@ document.addEventListener('keydown', function(event) {
                 document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
                 saveState();
                 redrawCanvas();
+                updateAnnotationCounter();
             }
             break;
     }
