@@ -19,6 +19,14 @@ PDF EditorZ, tarayıcıda çalışan güçlü ve profesyonel bir PDF düzenleme 
 - ✅ **Silgi Aracı** - Boyut ayarlanabilir silgi
 - ✅ **Dijital İmza** - Çizim veya yazı tabanlı imza ekleme
 
+### 🎯 **Gelişmiş Araçlar** (v2.0 Yeni!)
+- ✅ **Yapışkan Notlar** - Post-it tarzı düzenlenebilir notlar
+- ✅ **Açıklama Kutuları** - Ok işaretli profesyonel callout'lar
+- ✅ **Üstü Çizili** - Strikethrough metin efektleri
+- ✅ **Altı Çizili** - Underline vurgulama
+- ✅ **Mühür Kütüphanesi** - 16 hazır mühür (ONAYLANDI, REDDEDİLDİ, vb.)
+- ✅ **Serbest Çizim** - Gelişmiş freehand drawing
+
 ### 📝 **Form Elemanları**
 - ✅ **Checkbox** - Tik kutucukları
 - ✅ **Radio Button** - Seçim düğmeleri
@@ -31,40 +39,63 @@ PDF EditorZ, tarayıcıda çalışan güçlü ve profesyonel bir PDF düzenleme 
 - ✅ **PDF Metadata Düzenleme** - Başlık, yazar, konu bilgileri düzenleme
 - ✅ **Geri Al/İleri Al** - Ctrl+Z/Y ile 50 seviye undo/redo
 - ✅ **Otomatik Kayıt** - 30 saniyede bir otomatik kayıt
-- ✅ **Klavye Kısayolları** - Hızlı erişim için kısayollar
+- ✅ **Klavye Kısayolları** - 30+ hızlı erişim kısayolu
 
-### 🎯 **Kullanıcı Deneyimi**
-- ✅ Modern ve profesyonel arayüz
-- ✅ Responsive tasarım (mobil uyumlu)
-- ✅ Türkçe dil desteği
-- ✅ Bilgilendirici notifikasyonlar
-- ✅ Progress bar'lar ve loading göstergeleri
+### 🎯 **Kullanıcı Deneyimi** (v2.0 Güncel!)
+- ✅ **Dark Mode** - Karanlık/Aydınlık tema geçişi
+- ✅ **Responsive Tasarım** - Tablet ve mobil uyumlu
+- ✅ **Sidebar Toggle** - Katlanabilir yan menü
+- ✅ **Context Menu** - Sağ tık ile gelişmiş menü
+- ✅ **Copy/Paste** - Element kopyalama/yapıştırma
+- ✅ **Drag & Drop** - Tüm elemanları sürükle-bırak
+- ✅ **Touch Support** - Dokunmatik ekran desteği
+- ✅ **Türkçe dil desteği**
+- ✅ **Bilgilendirici notifikasyonlar**
+- ✅ **Progress bar'lar ve loading göstergeleri**
 
 ## ⌨️ Klavye Kısayolları
 
+### Global Kısayollar
 | Kısayol | İşlev |
 |---------|-------|
 | `Ctrl+Z` | Geri Al |
 | `Ctrl+Y` | İleri Al |
 | `Ctrl+S` | PDF İndir |
 | `Ctrl+O` | PDF Yükle |
+| `Ctrl+A` | Tümünü Seç |
+| `Ctrl+D` | Dark Mode |
+| `Ctrl+H` | Yardım |
+| `Del` | Seçili Öğeyi Sil |
+| `Esc` | Seçimi Kaldır |
+
+### Araç Kısayolları
+| Kısayol | İşlev |
+|---------|-------|
 | `C` | İmleç Aracı |
 | `T` | Metin Aracı |
 | `H` | Vurgulama Aracı |
 | `I` | Resim Aracı |
 | `D` | Çizim Aracı |
 | `E` | Silgi Aracı |
-| `S` | Şekil Aracı |
-| `Esc` | Seçimi Kaldır |
-| `Del` | Seçili Öğeyi Sil |
+| `S` | İmza Aracı |
+| `R` | Dikdörtgen |
+
+### Navigasyon Kısayolları
+| Kısayol | İşlev |
+|---------|-------|
 | `←/→` | Sayfa Değiştir |
+| `1-9` | Sayfa Atla |
+| `+/-` | Zoom In/Out |
+| `0` | Zoom Sıfırla |
 
 ## 🚀 Kullanıma Başlama
 
 1. **PDF Yükleme**: "PDF Yükle" butonuna tıklayarak dosyanızı seçin
 2. **Araç Seçimi**: Sol sidebar'dan istediğiniz aracı seçin
 3. **Düzenleme**: PDF üzerinde tıklayarak/sürükleyerek düzenlemeler yapın
-4. **Kaydetme**: "PDF İndir" ile düzenlenmiş dosyanızı indirin
+4. **Gelişmiş Özellikler**: Sağ tık menüsü ile copy/paste, layer yönetimi
+5. **Tema Değiştirme**: Header'dan Dark/Light mode geçişi
+6. **Kaydetme**: "PDF İndir" ile düzenlenmiş dosyanızı indirin
 
 ## 🔒 Güvenlik
 
@@ -80,6 +111,7 @@ PDF EditorZ, tarayıcıda çalışan güçlü ve profesyonel bir PDF düzenleme 
   - PDF-lib (PDF düzenleme)
 - **OCR**: Tesseract.js (metin tanıma)
 - **UI**: Font Awesome (ikonlar)
+- **Styling**: CSS Custom Properties (CSS Variables)
 
 ## 📱 Tarayıcı Desteği
 
@@ -90,21 +122,50 @@ PDF EditorZ, tarayıcıda çalışan güçlü ve profesyonel bir PDF düzenleme 
 
 ## 🎨 Özellik Karşılaştırması
 
-| Özellik | PDF EditorZ | SmallPDF | PDFfiller |
-|---------|-------------|-----------|-----------|
+| Özellik | PDF EditorZ v2.0 | SmallPDF | PDFfiller |
+|---------|------------------|-----------|-----------|
 | Metin Ekleme | ✅ | ✅ | ✅ |
 | Vurgulama | ✅ | ✅ | ✅ |
 | Resim Ekleme | ✅ | ✅ | ✅ |
 | Form Elemanları | ✅ | ❌ | ✅ |
 | Sayfa Sıralama | ✅ | ✅ | ✅ |
 | OCR Desteği | ✅ | ✅ | ✅ |
+| Mühür Kütüphanesi | ✅ | ❌ | ✅ |
+| Dark Mode | ✅ | ❌ | ❌ |
+| Context Menu | ✅ | ❌ | ❌ |
+| Klavye Kısayolları | ✅ (30+) | ❌ | ❌ |
 | Client-Side | ✅ | ❌ | ❌ |
 | Ücretsiz | ✅ | 💰 | 💰 |
 | Türkçe | ✅ | ✅ | ❌ |
 
 ## 📈 Sürüm Geçmişi
 
-### v2.0.0 (Şubat 2024)
+### v2.0.0 (Mart 2024) - Major Update 🚀
+**🌟 Kullanıcı Deneyimi**
+- ✨ **Dark Mode** - Karanlık/Aydınlık tema geçişi
+- ✨ **Responsive Design** - Mobil ve tablet optimizasyonu
+- ✨ **Sidebar Toggle** - Katlanabilir yan menü
+- ✨ **30+ Klavye Kısayolu** - Hızlı erişim için kapsamlı shortcuts
+
+**🎨 Yeni Annotation Araçları**
+- ✨ **Yapışkan Notlar** - Post-it tarzı düzenlenebilir notlar
+- ✨ **Açıklama Kutuları** - Profesyonel callout balloon'lar
+- ✨ **Mühür Kütüphanesi** - 16 hazır mühür (4 kategori)
+- ✨ **Üstü Çizili/Altı Çizili** - Metin efektleri
+
+**🔧 Gelişmiş Özellikler**
+- ✨ **Context Menu** - Sağ tık ile gelişmiş işlemler
+- ✨ **Copy/Paste System** - Element kopyalama/yapıştırma
+- ✨ **Layer Management** - Öne getir/arkaya gönder
+- ✨ **Properties Panel** - Element özelliklerini görüntüleme
+
+**⚡ Teknik İyileştirmeler**
+- 🔧 Modüler kod yapısı ve performans optimizasyonu
+- 🔧 Touch-friendly controls
+- 🔧 Memory leak önlemleri
+- 🔧 Error handling iyileştirmeleri
+
+### v1.5.0 (Şubat 2024)
 - ✨ Sayfa sıralama özelliği eklendi
 - ✨ OCR metin tanıma desteği eklendi
 - ✨ Vurgulama (highlight) aracı eklendi
@@ -145,4 +206,4 @@ Bu proje MIT lisansı altında lisanslanmıştır. Detaylar için [LICENSE](LICE
 
 ---
 
-**PDF EditorZ** ile PDF düzenleme deneyiminizi bir üst seviyeye taşıyın! 🚀 
+**PDF EditorZ v2.0** ile PDF düzenleme deneyiminizi bir üst seviyeye taşıyın! 🚀 
