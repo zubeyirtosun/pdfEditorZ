@@ -11,6 +11,14 @@ let lastY = 0;
 let annotations = [];
 let currentSignature = null;
 
+// Modern editing variables
+let undoStack = [];
+let redoStack = [];
+let selectedElement = null;
+let isDragging = false;
+let isResizing = false;
+let dragOffset = { x: 0, y: 0 };
+
 // Check if libraries are loaded
 function checkLibraries() {
     console.log('Kütüphane kontrolü başlatılıyor...');
@@ -95,6 +103,338 @@ sizePicker.addEventListener('input', function() {
     sizeValue.textContent = this.value + 'px';
 });
 
+// Undo/Redo System
+function saveState() {
+    const state = {
+        annotations: JSON.parse(JSON.stringify(annotations)),
+        canvasData: canvas.toDataURL()
+    };
+    undoStack.push(state);
+    
+    // Limit undo stack to 50 operations
+    if (undoStack.length > 50) {
+        undoStack.shift();
+    }
+    
+    // Clear redo stack when new action is performed
+    redoStack = [];
+    
+    console.log('State saved, undo stack size:', undoStack.length);
+}
+
+function undo() {
+    if (undoStack.length === 0) return;
+    
+    // Save current state to redo stack
+    const currentState = {
+        annotations: JSON.parse(JSON.stringify(annotations)),
+        canvasData: canvas.toDataURL()
+    };
+    redoStack.push(currentState);
+    
+    // Restore previous state
+    const previousState = undoStack.pop();
+    annotations = previousState.annotations;
+    
+    // Redraw canvas
+    redrawCanvas();
+    console.log('Undo performed');
+}
+
+function redo() {
+    if (redoStack.length === 0) return;
+    
+    // Save current state to undo stack
+    const currentState = {
+        annotations: JSON.parse(JSON.stringify(annotations)),
+        canvasData: canvas.toDataURL()
+    };
+    undoStack.push(currentState);
+    
+    // Restore next state
+    const nextState = redoStack.pop();
+    annotations = nextState.annotations;
+    
+    // Redraw canvas
+    redrawCanvas();
+    console.log('Redo performed');
+}
+
+async function redrawCanvas() {
+    // Clear overlay
+    overlay.innerHTML = '';
+    
+    // Re-render PDF page
+    await renderPage(currentPageNum);
+    
+    // Redraw all annotations
+    annotations.forEach(annotation => {
+        if (annotation.page === currentPageNum) {
+            drawAnnotation(annotation);
+        }
+    });
+}
+
+function drawAnnotation(annotation) {
+    switch (annotation.type) {
+        case 'text':
+            drawTextAnnotation(annotation);
+            break;
+        case 'draw':
+            drawLineAnnotation(annotation);
+            break;
+        case 'signature':
+            drawSignatureAnnotation(annotation);
+            break;
+        case 'rectangle':
+        case 'circle':
+        case 'arrow':
+            drawShapeAnnotation(annotation);
+            break;
+    }
+}
+
+function drawTextAnnotation(annotation) {
+    // Create editable text element
+    const textElement = document.createElement('div');
+    textElement.className = 'text-annotation';
+    textElement.style.position = 'absolute';
+    textElement.style.left = annotation.x + 'px';
+    textElement.style.top = annotation.y + 'px';
+    textElement.style.fontSize = annotation.size + 'px';
+    textElement.style.color = annotation.color;
+    textElement.style.fontFamily = 'Arial, sans-serif';
+    textElement.style.cursor = 'move';
+    textElement.style.userSelect = 'none';
+    textElement.style.padding = '2px';
+    textElement.style.border = '1px dashed transparent';
+    textElement.textContent = annotation.text;
+    textElement.setAttribute('data-annotation-id', annotation.id);
+    
+    // Make it editable and draggable
+    textElement.addEventListener('click', () => selectElement(textElement, annotation));
+    textElement.addEventListener('dblclick', () => editText(textElement, annotation));
+    
+    overlay.appendChild(textElement);
+}
+
+function drawLineAnnotation(annotation) {
+    ctx.beginPath();
+    ctx.moveTo(annotation.x1, annotation.y1);
+    ctx.lineTo(annotation.x2, annotation.y2);
+    ctx.strokeStyle = annotation.color;
+    ctx.lineWidth = annotation.width;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+}
+
+function drawSignatureAnnotation(annotation) {
+    if (annotation.image) {
+        const img = new Image();
+        img.onload = function() {
+            ctx.drawImage(img, annotation.x, annotation.y, annotation.width, annotation.height);
+        };
+        img.src = annotation.image;
+    }
+}
+
+function drawShapeAnnotation(annotation) {
+    ctx.beginPath();
+    ctx.strokeStyle = annotation.color;
+    ctx.lineWidth = annotation.width || 2;
+    
+    switch (annotation.shapeType) {
+        case 'rectangle':
+            ctx.rect(annotation.x, annotation.y, annotation.width, annotation.height);
+            break;
+        case 'circle':
+            const radius = Math.min(annotation.width, annotation.height) / 2;
+            ctx.arc(annotation.x + radius, annotation.y + radius, radius, 0, 2 * Math.PI);
+            break;
+        case 'arrow':
+            drawArrow(annotation.x1, annotation.y1, annotation.x2, annotation.y2);
+            break;
+    }
+    
+    if (annotation.filled) {
+        ctx.fillStyle = annotation.color;
+        ctx.fill();
+    } else {
+        ctx.stroke();
+    }
+}
+
+function drawArrow(x1, y1, x2, y2) {
+    const headLength = 15;
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    
+    // Draw line
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    
+    // Draw arrowhead
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLength * Math.cos(angle - Math.PI / 6), y2 - headLength * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLength * Math.cos(angle + Math.PI / 6), y2 - headLength * Math.sin(angle + Math.PI / 6));
+}
+
+// Modern text editing
+function selectElement(element, annotation) {
+    // Deselect previous element
+    if (selectedElement) {
+        selectedElement.style.border = '1px dashed transparent';
+    }
+    
+    selectedElement = element;
+    element.style.border = '1px dashed #667eea';
+    
+    // Add resize handles if needed
+    addResizeHandles(element, annotation);
+}
+
+function editText(element, annotation) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = annotation.text;
+    input.style.position = 'absolute';
+    input.style.left = element.style.left;
+    input.style.top = element.style.top;
+    input.style.fontSize = element.style.fontSize;
+    input.style.color = element.style.color;
+    input.style.border = '2px solid #667eea';
+    input.style.background = 'white';
+    input.style.padding = '2px';
+    input.style.borderRadius = '4px';
+    input.style.outline = 'none';
+    
+    overlay.appendChild(input);
+    input.focus();
+    input.select();
+    
+    const saveText = () => {
+        if (input.value.trim()) {
+            saveState(); // Save for undo
+            annotation.text = input.value;
+            element.textContent = input.value;
+        }
+        overlay.removeChild(input);
+    };
+    
+    input.addEventListener('blur', saveText);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveText();
+        } else if (e.key === 'Escape') {
+            overlay.removeChild(input);
+        }
+    });
+}
+
+function addResizeHandles(element, annotation) {
+    // Remove existing handles
+    document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+    
+    // Add corner handles for resizing
+    ['nw', 'ne', 'sw', 'se'].forEach(position => {
+        const handle = document.createElement('div');
+        handle.className = 'resize-handle';
+        handle.style.position = 'absolute';
+        handle.style.width = '8px';
+        handle.style.height = '8px';
+        handle.style.background = '#667eea';
+        handle.style.border = '1px solid white';
+        handle.style.borderRadius = '50%';
+        handle.style.cursor = position + '-resize';
+        handle.style.zIndex = '1000';
+        
+        // Position handle
+        const rect = element.getBoundingClientRect();
+        const overlayRect = overlay.getBoundingClientRect();
+        
+        switch (position) {
+            case 'nw':
+                handle.style.left = (rect.left - overlayRect.left - 4) + 'px';
+                handle.style.top = (rect.top - overlayRect.top - 4) + 'px';
+                break;
+            case 'ne':
+                handle.style.left = (rect.right - overlayRect.left - 4) + 'px';
+                handle.style.top = (rect.top - overlayRect.top - 4) + 'px';
+                break;
+            case 'sw':
+                handle.style.left = (rect.left - overlayRect.left - 4) + 'px';
+                handle.style.top = (rect.bottom - overlayRect.top - 4) + 'px';
+                break;
+            case 'se':
+                handle.style.left = (rect.right - overlayRect.left - 4) + 'px';
+                handle.style.top = (rect.bottom - overlayRect.top - 4) + 'px';
+                break;
+        }
+        
+        overlay.appendChild(handle);
+    });
+}
+
+// Eraser tool
+function activateEraser() {
+    activeTool = 'eraser';
+    canvas.style.cursor = 'crosshair';
+    
+    // Show eraser size indicator
+    const eraserIndicator = document.createElement('div');
+    eraserIndicator.id = 'eraserIndicator';
+    eraserIndicator.style.position = 'fixed';
+    eraserIndicator.style.width = sizePicker.value + 'px';
+    eraserIndicator.style.height = sizePicker.value + 'px';
+    eraserIndicator.style.border = '2px solid #ff4757';
+    eraserIndicator.style.borderRadius = '50%';
+    eraserIndicator.style.pointerEvents = 'none';
+    eraserIndicator.style.zIndex = '10000';
+    eraserIndicator.style.display = 'none';
+    document.body.appendChild(eraserIndicator);
+}
+
+function eraseAt(x, y) {
+    const eraserSize = parseInt(sizePicker.value);
+    
+    // Remove annotations within eraser radius
+    annotations = annotations.filter(annotation => {
+        if (annotation.page !== currentPageNum) return true;
+        
+        switch (annotation.type) {
+            case 'text':
+                const textDistance = Math.sqrt(
+                    Math.pow(annotation.x - x, 2) + Math.pow(annotation.y - y, 2)
+                );
+                return textDistance > eraserSize;
+                
+            case 'draw':
+                const lineDistance = distanceToLine(x, y, annotation.x1, annotation.y1, annotation.x2, annotation.y2);
+                return lineDistance > eraserSize;
+                
+            case 'signature':
+                return !(x >= annotation.x && x <= annotation.x + annotation.width &&
+                        y >= annotation.y && y <= annotation.y + annotation.height);
+                
+            default:
+                return true;
+        }
+    });
+    
+    redrawCanvas();
+}
+
+function distanceToLine(px, py, x1, y1, x2, y2) {
+    const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    if (length === 0) return Math.sqrt(Math.pow(px - x1, 2) + Math.pow(py - y1, 2));
+    
+    const t = Math.max(0, Math.min(1, ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / Math.pow(length, 2)));
+    const projection = { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+    
+    return Math.sqrt(Math.pow(px - projection.x, 2) + Math.pow(py - projection.y, 2));
+}
+
 // Load PDF function
 async function loadPDF(event) {
     const file = event.target.files[0];
@@ -155,6 +495,11 @@ async function loadPDF(event) {
         welcomeScreen.style.display = 'none';
         canvas.style.display = 'block';
         pageNavigation.style.display = 'flex';
+        
+        // Clear previous annotations and state
+        annotations = [];
+        undoStack = [];
+        redoStack = [];
         
         // Render first page
         await renderPage(1);
@@ -277,9 +622,14 @@ function activateTool(tool) {
     });
     
     // Add active class to selected tool
-    document.getElementById(tool + 'Tool').classList.add('active');
-    
-    activeTool = tool;
+    if (tool === 'eraser') {
+        // Handle eraser specially
+        activateEraser();
+        document.querySelector('[onclick="activateTool(\'eraser\')"]')?.classList.add('active');
+    } else {
+        document.getElementById(tool + 'Tool')?.classList.add('active');
+        activeTool = tool;
+    }
     
     // Special handling for signature tool
     if (tool === 'signature') {
@@ -288,6 +638,13 @@ function activateTool(tool) {
     
     // Update cursor based on tool
     updateCursor();
+    
+    // Clear selection when switching tools
+    if (selectedElement) {
+        selectedElement.style.border = '1px dashed transparent';
+        selectedElement = null;
+        document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+    }
     
     console.log('Aktif araç:', tool);
 }
@@ -303,16 +660,33 @@ function updateCursor() {
         case 'signature':
             canvas.style.cursor = 'pointer';
             break;
+        case 'shape':
+            canvas.style.cursor = 'crosshair';
+            break;
+        case 'eraser':
+            canvas.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'20\' height=\'20\' viewBox=\'0 0 20 20\'><circle cx=\'10\' cy=\'10\' r=\'8\' stroke=\'%23ff4757\' stroke-width=\'2\' fill=\'none\'/></svg>") 10 10, crosshair';
+            break;
         default:
             canvas.style.cursor = 'default';
     }
 }
+
+// Modern shape variables
+let shapeStartX = 0;
+let shapeStartY = 0;
+let isDrawingShape = false;
+let currentShape = 'rectangle';
 
 // Canvas event listeners
 canvas.addEventListener('click', handleCanvasClick);
 canvas.addEventListener('mousedown', handleMouseDown);
 canvas.addEventListener('mousemove', handleMouseMove);
 canvas.addEventListener('mouseup', handleMouseUp);
+
+// Overlay event listeners for drag and drop
+overlay.addEventListener('mousedown', handleOverlayMouseDown);
+overlay.addEventListener('mousemove', handleOverlayMouseMove);
+overlay.addEventListener('mouseup', handleOverlayMouseUp);
 
 function handleCanvasClick(event) {
     if (!activeTool) return;
@@ -323,40 +697,131 @@ function handleCanvasClick(event) {
     
     switch (activeTool) {
         case 'text':
-            addTextAnnotation(x, y);
+            addModernTextAnnotation(x, y);
             break;
         case 'signature':
             if (currentSignature) {
                 addSignature(x, y);
             }
             break;
+        case 'eraser':
+            eraseAt(x, y);
+            break;
     }
 }
 
 function handleMouseDown(event) {
-    if (activeTool === 'draw') {
-        isDrawing = true;
-        const rect = canvas.getBoundingClientRect();
-        lastX = event.clientX - rect.left;
-        lastY = event.clientY - rect.top;
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    switch (activeTool) {
+        case 'draw':
+            isDrawing = true;
+            lastX = x;
+            lastY = y;
+            saveState(); // Save state before drawing
+            break;
+            
+        case 'shape':
+            isDrawingShape = true;
+            shapeStartX = x;
+            shapeStartY = y;
+            saveState(); // Save state before adding shape
+            break;
+            
+        case 'eraser':
+            isDrawing = true;
+            eraseAt(x, y);
+            saveState(); // Save state before erasing
+            break;
     }
 }
 
 function handleMouseMove(event) {
+    const rect = canvas.getBoundingClientRect();
+    const currentX = event.clientX - rect.left;
+    const currentY = event.clientY - rect.top;
+    
+    // Update eraser indicator
+    if (activeTool === 'eraser') {
+        const indicator = document.getElementById('eraserIndicator');
+        if (indicator) {
+            indicator.style.left = (event.clientX - parseInt(sizePicker.value) / 2) + 'px';
+            indicator.style.top = (event.clientY - parseInt(sizePicker.value) / 2) + 'px';
+            indicator.style.display = 'block';
+        }
+        
+        if (isDrawing) {
+            eraseAt(currentX, currentY);
+        }
+    }
+    
     if (activeTool === 'draw' && isDrawing) {
-        const rect = canvas.getBoundingClientRect();
-        const currentX = event.clientX - rect.left;
-        const currentY = event.clientY - rect.top;
-        
         drawLine(lastX, lastY, currentX, currentY);
-        
         lastX = currentX;
         lastY = currentY;
     }
 }
 
-function handleMouseUp() {
+function handleMouseUp(event) {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    if (activeTool === 'shape' && isDrawingShape) {
+        addShapeAnnotation(shapeStartX, shapeStartY, x, y);
+        isDrawingShape = false;
+    }
+    
     isDrawing = false;
+    
+    // Hide eraser indicator
+    if (activeTool === 'eraser') {
+        const indicator = document.getElementById('eraserIndicator');
+        if (indicator) {
+            indicator.style.display = 'none';
+        }
+    }
+}
+
+// Overlay event handlers for drag and drop
+function handleOverlayMouseDown(event) {
+    if (event.target.classList.contains('text-annotation')) {
+        isDragging = true;
+        const rect = overlay.getBoundingClientRect();
+        dragOffset.x = event.clientX - rect.left - parseInt(event.target.style.left);
+        dragOffset.y = event.clientY - rect.top - parseInt(event.target.style.top);
+        event.preventDefault();
+    }
+}
+
+function handleOverlayMouseMove(event) {
+    if (isDragging && selectedElement) {
+        const rect = overlay.getBoundingClientRect();
+        const newX = event.clientX - rect.left - dragOffset.x;
+        const newY = event.clientY - rect.top - dragOffset.y;
+        
+        selectedElement.style.left = newX + 'px';
+        selectedElement.style.top = newY + 'px';
+        
+        // Update annotation data
+        const annotationId = selectedElement.getAttribute('data-annotation-id');
+        const annotation = annotations.find(a => a.id === annotationId);
+        if (annotation) {
+            annotation.x = newX;
+            annotation.y = newY;
+        }
+        
+        event.preventDefault();
+    }
+}
+
+function handleOverlayMouseUp(event) {
+    if (isDragging) {
+        isDragging = false;
+        saveState(); // Save state after dragging
+    }
 }
 
 // Drawing function
@@ -379,25 +844,85 @@ function drawLine(x1, y1, x2, y2) {
     });
 }
 
-// Text annotation
-function addTextAnnotation(x, y) {
-    const text = prompt('Eklemek istediğiniz metni girin:');
-    if (!text) return;
+// Modern text annotation
+function addModernTextAnnotation(x, y) {
+    saveState(); // Save state before adding text
     
-    ctx.font = `${sizePicker.value}px Arial`;
-    ctx.fillStyle = colorPicker.value;
-    ctx.fillText(text, x, y);
+    // Generate unique ID
+    const id = 'text_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
-    // Save annotation
-    annotations.push({
+    // Create annotation object
+    const annotation = {
+        id: id,
         type: 'text',
-        x, y, text,
+        x: x,
+        y: y,
+        text: 'Metin yazın...',
         size: parseInt(sizePicker.value),
         color: colorPicker.value,
         page: currentPageNum
-    });
+    };
     
-    console.log('Metin eklendi:', text);
+    annotations.push(annotation);
+    
+    // Create and show text element immediately
+    drawTextAnnotation(annotation);
+    
+    // Select and edit immediately
+    const textElement = overlay.querySelector(`[data-annotation-id="${id}"]`);
+    if (textElement) {
+        selectElement(textElement, annotation);
+        // Auto-edit
+        setTimeout(() => editText(textElement, annotation), 100);
+    }
+    
+    console.log('Modern metin eklendi');
+}
+
+// Shape annotation
+function addShapeAnnotation(startX, startY, endX, endY) {
+    const width = Math.abs(endX - startX);
+    const height = Math.abs(endY - startY);
+    
+    if (width < 10 || height < 10) return; // Minimum size
+    
+    const id = 'shape_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    const annotation = {
+        id: id,
+        type: 'shape',
+        shapeType: currentShape,
+        x: Math.min(startX, endX),
+        y: Math.min(startY, endY),
+        width: width,
+        height: height,
+        x1: startX,
+        y1: startY,
+        x2: endX,
+        y2: endY,
+        color: colorPicker.value,
+        width: parseInt(sizePicker.value) / 2,
+        filled: false,
+        page: currentPageNum
+    };
+    
+    annotations.push(annotation);
+    drawShapeAnnotation(annotation);
+    
+    console.log('Şekil eklendi:', currentShape);
+}
+
+// Shape selector
+function selectShape(shape) {
+    currentShape = shape;
+    activeTool = 'shape';
+    
+    // Update UI
+    document.querySelectorAll('.shape-option').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`[data-shape="${shape}"]`)?.classList.add('active');
+    
+    updateCursor();
+    console.log('Şekil seçildi:', shape);
 }
 
 // Signature functions
@@ -709,16 +1234,71 @@ document.addEventListener('keydown', function(event) {
                 event.preventDefault();
                 document.getElementById('pdfInput').click();
                 break;
+            case 'z':
+                event.preventDefault();
+                if (event.shiftKey) {
+                    redo(); // Ctrl+Shift+Z
+                } else {
+                    undo(); // Ctrl+Z
+                }
+                break;
+            case 'y':
+                event.preventDefault();
+                redo(); // Ctrl+Y
+                break;
         }
     }
     
-    // Page navigation with arrow keys
+    // Tool shortcuts
     switch (event.key) {
         case 'ArrowLeft':
             previousPage();
             break;
         case 'ArrowRight':
             nextPage();
+            break;
+        case 't':
+            if (!event.ctrlKey && !event.metaKey) {
+                activateTool('text');
+            }
+            break;
+        case 'd':
+            if (!event.ctrlKey && !event.metaKey) {
+                activateTool('draw');
+            }
+            break;
+        case 'e':
+            if (!event.ctrlKey && !event.metaKey) {
+                activateTool('eraser');
+            }
+            break;
+        case 's':
+            if (!event.ctrlKey && !event.metaKey) {
+                activateTool('shape');
+            }
+            break;
+        case 'Escape':
+            // Deselect current selection
+            if (selectedElement) {
+                selectedElement.style.border = '1px dashed transparent';
+                selectedElement = null;
+                document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+            }
+            activeTool = null;
+            updateCursor();
+            break;
+        case 'Delete':
+        case 'Backspace':
+            // Delete selected element
+            if (selectedElement) {
+                const annotationId = selectedElement.getAttribute('data-annotation-id');
+                annotations = annotations.filter(a => a.id !== annotationId);
+                selectedElement.remove();
+                selectedElement = null;
+                document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+                saveState();
+                redrawCanvas();
+            }
             break;
     }
 });

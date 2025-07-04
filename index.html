@@ -54,22 +54,51 @@
 
             <div class="tool-section">
                 <h3><i class="fas fa-edit"></i> Düzenleme</h3>
-                <button class="tool-btn" id="textTool" onclick="activateTool('text')">
+                <button class="tool-btn" id="textTool" onclick="activateTool('text')" title="Metin Ekle (T)">
                     <i class="fas fa-font"></i>
-                    Metin Ekle
+                    Metin
                 </button>
-                <button class="tool-btn" id="signatureTool" onclick="activateTool('signature')">
+                <button class="tool-btn" id="signatureTool" onclick="activateTool('signature')" title="İmza Ekle">
                     <i class="fas fa-signature"></i>
-                    İmza Ekle
+                    İmza
                 </button>
-                <button class="tool-btn" id="drawTool" onclick="activateTool('draw')">
+                <button class="tool-btn" id="drawTool" onclick="activateTool('draw')" title="Çizim (D)">
                     <i class="fas fa-pen"></i>
                     Çizim
                 </button>
-                <button class="tool-btn" id="shapeTool" onclick="activateTool('shape')">
-                    <i class="fas fa-shapes"></i>
-                    Şekil
+                <button class="tool-btn" onclick="activateTool('eraser')" title="Silgi (E)">
+                    <i class="fas fa-eraser"></i>
+                    Silgi
                 </button>
+            </div>
+
+            <div class="tool-section">
+                <h3><i class="fas fa-shapes"></i> Şekiller</h3>
+                <div class="shape-selector">
+                    <button class="shape-option" data-shape="rectangle" onclick="selectShape('rectangle')" title="Dikdörtgen">
+                        <i class="fas fa-square"></i>
+                    </button>
+                    <button class="shape-option" data-shape="circle" onclick="selectShape('circle')" title="Daire">
+                        <i class="fas fa-circle"></i>
+                    </button>
+                    <button class="shape-option" data-shape="arrow" onclick="selectShape('arrow')" title="Ok">
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h3><i class="fas fa-history"></i> Geçmiş</h3>
+                <div class="history-controls">
+                    <button class="tool-btn half-width" onclick="undo()" title="Geri Al (Ctrl+Z)">
+                        <i class="fas fa-undo"></i>
+                        Geri Al
+                    </button>
+                    <button class="tool-btn half-width" onclick="redo()" title="İleri Al (Ctrl+Y)">
+                        <i class="fas fa-redo"></i>
+                        İleri Al
+                    </button>
+                </div>
             </div>
 
             <div class="tool-section">
@@ -98,6 +127,42 @@
                     <label>Boyut:</label>
                     <input type="range" id="sizePicker" min="8" max="72" value="16">
                     <span id="sizeValue">16px</span>
+                </div>
+            </div>
+
+            <div class="shortcuts-info">
+                <h4><i class="fas fa-keyboard"></i> Klavye Kısayolları</h4>
+                <div class="shortcut-item">
+                    <span>Geri Al</span>
+                    <span class="shortcut-key">Ctrl+Z</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>İleri Al</span>
+                    <span class="shortcut-key">Ctrl+Y</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Metin</span>
+                    <span class="shortcut-key">T</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Çizim</span>
+                    <span class="shortcut-key">D</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Silgi</span>
+                    <span class="shortcut-key">E</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Şekil</span>
+                    <span class="shortcut-key">S</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Seçimi Kaldır</span>
+                    <span class="shortcut-key">Esc</span>
+                </div>
+                <div class="shortcut-item">
+                    <span>Sil</span>
+                    <span class="shortcut-key">Del</span>
                 </div>
             </div>
         </div>
