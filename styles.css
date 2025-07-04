@@ -1056,6 +1056,51 @@ body {
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
+/* Signature annotations */
+.signature-annotation {
+    position: absolute;
+    border: 2px solid transparent;
+    cursor: move;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.signature-annotation:hover {
+    border-color: rgba(59, 130, 246, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.signature-annotation.selected {
+    border: 2px dashed #3b82f6 !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.signature-annotation img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+/* Shape annotations */
+.shape-annotation {
+    position: absolute;
+    border: 2px solid transparent;
+    cursor: move;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.shape-annotation:hover {
+    border-color: rgba(59, 130, 246, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.shape-annotation.selected {
+    border: 2px dashed #3b82f6 !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
 .form-annotation.checkbox::before {
     content: '☐';
     margin-right: 6px;

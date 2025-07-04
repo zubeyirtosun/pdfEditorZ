@@ -265,39 +265,133 @@ function drawLineAnnotation(annotation) {
 }
 
 function drawSignatureAnnotation(annotation) {
+    // Add signature to overlay for drag & drop
+    addSignatureToOverlay(annotation);
+}
+
+function addSignatureToOverlay(annotation) {
+    const signatureDiv = document.createElement('div');
+    signatureDiv.className = 'signature-annotation';
+    signatureDiv.setAttribute('data-annotation-id', annotation.id);
+    signatureDiv.style.position = 'absolute';
+    signatureDiv.style.left = (annotation.x * currentScale) + 'px';
+    signatureDiv.style.top = (annotation.y * currentScale) + 'px';
+    signatureDiv.style.width = (annotation.width * currentScale) + 'px';
+    signatureDiv.style.height = (annotation.height * currentScale) + 'px';
+    signatureDiv.style.border = '2px solid transparent';
+    signatureDiv.style.cursor = 'move';
+    signatureDiv.style.transition = 'all 0.2s ease';
+    
     if (annotation.image) {
-        const img = new Image();
-        img.onload = function() {
-            ctx.drawImage(img, annotation.x, annotation.y, annotation.width, annotation.height);
-        };
+        const img = document.createElement('img');
         img.src = annotation.image;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        img.style.pointerEvents = 'none';
+        img.draggable = false;
+        signatureDiv.appendChild(img);
     }
+    
+    // Add click handler for selection
+    signatureDiv.addEventListener('click', function() {
+        selectElement(signatureDiv, annotation);
+    });
+    
+    overlay.appendChild(signatureDiv);
 }
 
 function drawShapeAnnotation(annotation) {
-    ctx.beginPath();
-    ctx.strokeStyle = annotation.color;
-    ctx.lineWidth = annotation.width || 2;
+    // Add shape to overlay for drag & drop
+    addShapeToOverlay(annotation);
+}
+
+function addShapeToOverlay(annotation) {
+    const shapeDiv = document.createElement('div');
+    shapeDiv.className = 'shape-annotation';
+    shapeDiv.setAttribute('data-annotation-id', annotation.id);
+    shapeDiv.style.position = 'absolute';
+    shapeDiv.style.left = (annotation.x * currentScale) + 'px';
+    shapeDiv.style.top = (annotation.y * currentScale) + 'px';
+    shapeDiv.style.width = (annotation.width * currentScale) + 'px';
+    shapeDiv.style.height = (annotation.height * currentScale) + 'px';
+    shapeDiv.style.border = '2px solid transparent';
+    shapeDiv.style.cursor = 'move';
+    shapeDiv.style.transition = 'all 0.2s ease';
+    shapeDiv.style.pointerEvents = 'auto';
+    
+    // Create SVG for the shape
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    svg.style.pointerEvents = 'none';
+    
+    const strokeWidth = (annotation.strokeWidth || 2) / currentScale;
     
     switch (annotation.shapeType) {
         case 'rectangle':
-            ctx.rect(annotation.x, annotation.y, annotation.width, annotation.height);
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', strokeWidth/2);
+            rect.setAttribute('y', strokeWidth/2);
+            rect.setAttribute('width', annotation.width * currentScale - strokeWidth);
+            rect.setAttribute('height', annotation.height * currentScale - strokeWidth);
+            rect.setAttribute('stroke', annotation.color);
+            rect.setAttribute('stroke-width', strokeWidth);
+            rect.setAttribute('fill', annotation.filled ? annotation.color : 'transparent');
+            svg.appendChild(rect);
             break;
+            
         case 'circle':
-            const radius = Math.min(annotation.width, annotation.height) / 2;
-            ctx.arc(annotation.x + radius, annotation.y + radius, radius, 0, 2 * Math.PI);
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            const radius = Math.min(annotation.width, annotation.height) * currentScale / 2 - strokeWidth/2;
+            circle.setAttribute('cx', annotation.width * currentScale / 2);
+            circle.setAttribute('cy', annotation.height * currentScale / 2);
+            circle.setAttribute('r', radius);
+            circle.setAttribute('stroke', annotation.color);
+            circle.setAttribute('stroke-width', strokeWidth);
+            circle.setAttribute('fill', annotation.filled ? annotation.color : 'transparent');
+            svg.appendChild(circle);
             break;
+            
         case 'arrow':
-            drawArrow(annotation.x1, annotation.y1, annotation.x2, annotation.y2);
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', '10%');
+            line.setAttribute('y1', '50%');
+            line.setAttribute('x2', '90%');
+            line.setAttribute('y2', '50%');
+            line.setAttribute('stroke', annotation.color);
+            line.setAttribute('stroke-width', strokeWidth);
+            line.setAttribute('marker-end', 'url(#arrowhead)');
+            
+            // Create arrowhead marker
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'arrowhead');
+            marker.setAttribute('markerWidth', '10');
+            marker.setAttribute('markerHeight', '7');
+            marker.setAttribute('refX', '10');
+            marker.setAttribute('refY', '3.5');
+            marker.setAttribute('orient', 'auto');
+            
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
+            polygon.setAttribute('fill', annotation.color);
+            
+            marker.appendChild(polygon);
+            defs.appendChild(marker);
+            svg.appendChild(defs);
+            svg.appendChild(line);
             break;
     }
     
-    if (annotation.filled) {
-        ctx.fillStyle = annotation.color;
-        ctx.fill();
-    } else {
-        ctx.stroke();
-    }
+    shapeDiv.appendChild(svg);
+    
+    // Add click handler for selection
+    shapeDiv.addEventListener('click', function() {
+        selectElement(shapeDiv, annotation);
+    });
+    
+    overlay.appendChild(shapeDiv);
 }
 
 function drawArrow(x1, y1, x2, y2) {
@@ -326,9 +420,11 @@ function selectElement(element, annotation) {
     selectedElement = element;
     element.classList.add('selected');
     
-    // Add resize handles for resizable elements (images, forms)
+    // Add resize handles for resizable elements (all except text and highlight)
     if (element.classList.contains('image-annotation') || 
-        element.classList.contains('form-annotation')) {
+        element.classList.contains('form-annotation') ||
+        element.classList.contains('signature-annotation') ||
+        element.classList.contains('shape-annotation')) {
         addResizeHandles(element, annotation);
     }
 }
@@ -384,10 +480,11 @@ function addResizeHandles(element, annotation) {
     ['nw', 'ne', 'sw', 'se'].forEach(position => {
         const handle = document.createElement('div');
         handle.className = 'resize-handle';
+        handle.setAttribute('data-position', position);
         handle.style.position = 'absolute';
         handle.style.width = '8px';
         handle.style.height = '8px';
-        handle.style.background = '#667eea';
+        handle.style.background = '#3b82f6';
         handle.style.border = '1px solid white';
         handle.style.borderRadius = '50%';
         handle.style.cursor = position + '-resize';
@@ -416,9 +513,39 @@ function addResizeHandles(element, annotation) {
                 break;
         }
         
+        // Add resize functionality
+        handle.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            isResizingElement = true;
+            resizeHandlePosition = position;
+            currentResizeElement = element;
+            currentResizeAnnotation = annotation;
+            
+            const rect = element.getBoundingClientRect();
+            const overlayRect = overlay.getBoundingClientRect();
+            
+            resizeStartData = {
+                mouseX: e.clientX,
+                mouseY: e.clientY,
+                elementX: rect.left - overlayRect.left,
+                elementY: rect.top - overlayRect.top,
+                elementWidth: rect.width,
+                elementHeight: rect.height
+            };
+        });
+        
         overlay.appendChild(handle);
     });
 }
+
+// Global resize variables
+let isResizingElement = false;
+let resizeHandlePosition = '';
+let currentResizeElement = null;
+let currentResizeAnnotation = null;
+let resizeStartData = null;
 
 // Eraser tool
 function activateEraser() {
@@ -463,19 +590,13 @@ function eraseAt(x, y) {
                 break;
                 
             case 'signature':
+            case 'image':
+            case 'form':
+            case 'highlight':
+            case 'shape':
+                // Check if eraser overlaps with element area
                 shouldKeep = !(x >= annotation.x && x <= annotation.x + annotation.width &&
                               y >= annotation.y && y <= annotation.y + annotation.height);
-                break;
-                
-            case 'shape':
-                const shapeCenter = {
-                    x: annotation.x + annotation.width / 2,
-                    y: annotation.y + annotation.height / 2
-                };
-                const distanceToShape = Math.sqrt(
-                    Math.pow(shapeCenter.x - x, 2) + Math.pow(shapeCenter.y - y, 2)
-                );
-                shouldKeep = distanceToShape > eraserSize;
                 break;
                 
             default:
@@ -780,6 +901,19 @@ overlay.addEventListener('mousedown', handleOverlayMouseDown);
 overlay.addEventListener('mousemove', handleOverlayMouseMove);
 overlay.addEventListener('mouseup', handleOverlayMouseUp);
 
+// Global event listeners for resize operations that might go outside overlay
+document.addEventListener('mousemove', function(event) {
+    if (isResizingElement) {
+        handleOverlayMouseMove(event);
+    }
+});
+
+document.addEventListener('mouseup', function(event) {
+    if (isResizingElement) {
+        handleOverlayMouseUp(event);
+    }
+});
+
 function handleCanvasClick(event) {
     if (!activeTool) return;
     
@@ -827,7 +961,7 @@ function deselectAllElements() {
     }
     
     // Clear any active selections from all annotation types
-    document.querySelectorAll('.text-annotation.selected, .image-annotation.selected, .form-annotation.selected').forEach(element => {
+    document.querySelectorAll('.text-annotation.selected, .image-annotation.selected, .form-annotation.selected, .signature-annotation.selected, .shape-annotation.selected, .highlight-overlay.selected').forEach(element => {
         element.classList.remove('selected');
     });
 }
@@ -937,19 +1071,33 @@ function handleMouseUp(event) {
 // Overlay event handlers for drag and drop
 function handleOverlayMouseDown(event) {
     // Check if target is draggable annotation
-    if (event.target.classList.contains('text-annotation') || 
-        event.target.classList.contains('image-annotation') ||
-        event.target.classList.contains('form-annotation') ||
-        event.target.parentElement?.classList.contains('image-annotation')) {
-        
-        // Get the annotation element (handle img inside image-annotation)
-        const element = event.target.classList.contains('image-annotation') ? 
-                       event.target : 
-                       (event.target.parentElement?.classList.contains('image-annotation') ? 
-                        event.target.parentElement : event.target);
-        
+    const annotationClasses = [
+        'text-annotation',
+        'image-annotation', 
+        'form-annotation',
+        'signature-annotation',
+        'shape-annotation',
+        'highlight-overlay'
+    ];
+    
+    let element = null;
+    
+    // Find the correct annotation element
+    for (const className of annotationClasses) {
+        if (event.target.classList.contains(className)) {
+            element = event.target;
+            break;
+        }
+        // Check if parent element is an annotation (for nested elements like img)
+        if (event.target.parentElement?.classList.contains(className)) {
+            element = event.target.parentElement;
+            break;
+        }
+    }
+    
+    if (element) {
         isDragging = true;
-        selectedElement = element; // Set as selected element
+        selectedElement = element;
         
         const rect = overlay.getBoundingClientRect();
         dragOffset.x = (event.clientX - rect.left - parseInt(element.style.left)) / currentScale;
@@ -966,7 +1114,64 @@ function handleOverlayMouseDown(event) {
 }
 
 function handleOverlayMouseMove(event) {
-    if (isDragging && selectedElement) {
+    if (isResizingElement && currentResizeElement && currentResizeAnnotation) {
+        const deltaX = event.clientX - resizeStartData.mouseX;
+        const deltaY = event.clientY - resizeStartData.mouseY;
+        
+        let newX = resizeStartData.elementX;
+        let newY = resizeStartData.elementY;
+        let newWidth = resizeStartData.elementWidth;
+        let newHeight = resizeStartData.elementHeight;
+        
+        // Calculate new dimensions based on resize handle position
+        switch (resizeHandlePosition) {
+            case 'nw':
+                newX = resizeStartData.elementX + deltaX;
+                newY = resizeStartData.elementY + deltaY;
+                newWidth = resizeStartData.elementWidth - deltaX;
+                newHeight = resizeStartData.elementHeight - deltaY;
+                break;
+            case 'ne':
+                newY = resizeStartData.elementY + deltaY;
+                newWidth = resizeStartData.elementWidth + deltaX;
+                newHeight = resizeStartData.elementHeight - deltaY;
+                break;
+            case 'sw':
+                newX = resizeStartData.elementX + deltaX;
+                newWidth = resizeStartData.elementWidth - deltaX;
+                newHeight = resizeStartData.elementHeight + deltaY;
+                break;
+            case 'se':
+                newWidth = resizeStartData.elementWidth + deltaX;
+                newHeight = resizeStartData.elementHeight + deltaY;
+                break;
+        }
+        
+        // Minimum size constraints
+        const minSize = 20;
+        if (newWidth < minSize || newHeight < minSize) {
+            return;
+        }
+        
+        // Update element visual style
+        currentResizeElement.style.left = newX + 'px';
+        currentResizeElement.style.top = newY + 'px';
+        currentResizeElement.style.width = newWidth + 'px';
+        currentResizeElement.style.height = newHeight + 'px';
+        
+        // Update annotation data (convert back to unscaled coordinates)
+        currentResizeAnnotation.x = newX / currentScale;
+        currentResizeAnnotation.y = newY / currentScale;
+        currentResizeAnnotation.width = newWidth / currentScale;
+        currentResizeAnnotation.height = newHeight / currentScale;
+        
+        // Update resize handles position
+        if (selectedElement === currentResizeElement) {
+            addResizeHandles(currentResizeElement, currentResizeAnnotation);
+        }
+        
+        event.preventDefault();
+    } else if (isDragging && selectedElement) {
         const rect = overlay.getBoundingClientRect();
         const newX = (event.clientX - rect.left) / currentScale - dragOffset.x;
         const newY = (event.clientY - rect.top) / currentScale - dragOffset.y;
@@ -988,7 +1193,14 @@ function handleOverlayMouseMove(event) {
 }
 
 function handleOverlayMouseUp(event) {
-    if (isDragging) {
+    if (isResizingElement) {
+        isResizingElement = false;
+        resizeHandlePosition = '';
+        currentResizeElement = null;
+        currentResizeAnnotation = null;
+        resizeStartData = null;
+        saveState(); // Save state after resizing
+    } else if (isDragging) {
         isDragging = false;
         saveState(); // Save state after dragging
     }
@@ -1059,6 +1271,8 @@ function addShapeAnnotation(startX, startY, endX, endY) {
     
     if (width < 10 || height < 10) return; // Minimum size
     
+    saveState(); // Save state before adding shape
+    
     const id = 'shape_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
     const annotation = {
@@ -1074,14 +1288,15 @@ function addShapeAnnotation(startX, startY, endX, endY) {
         x2: endX,
         y2: endY,
         color: colorPicker.value,
-        width: parseInt(sizePicker.value) / 2,
+        strokeWidth: parseInt(sizePicker.value) / 2,
         filled: false,
         page: currentPageNum
     };
     
     annotations.push(annotation);
-    drawShapeAnnotation(annotation);
+    addShapeToOverlay(annotation);
     
+    updateAnnotationCounter();
     console.log('Şekil eklendi:', currentShape);
 }
 
@@ -1184,23 +1399,29 @@ function saveTypedSignature() {
 function addSignature(x, y) {
     if (!currentSignature) return;
     
-    const img = new Image();
-    img.onload = function() {
-        ctx.drawImage(img, x - 50, y - 25, 100, 50);
-        
-        // Save annotation
-        annotations.push({
-            type: 'signature',
-            x: x - 50,
-            y: y - 25,
-            width: 100,
-            height: 50,
-            image: currentSignature,
-            page: currentPageNum
-        });
-    };
-    img.src = currentSignature;
+    saveState(); // Save state before adding signature
     
+    // Generate unique ID
+    const id = 'signature_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    // Create annotation
+    const annotation = {
+        id: id,
+        type: 'signature',
+        x: x - 50,
+        y: y - 25,
+        width: 100,
+        height: 50,
+        image: currentSignature,
+        page: currentPageNum
+    };
+    
+    annotations.push(annotation);
+    
+    // Add to overlay for drag & drop
+    addSignatureToOverlay(annotation);
+    
+    updateAnnotationCounter();
     console.log('İmza eklendi');
 }
 
@@ -1669,7 +1890,7 @@ async function applyAnnotations() {
                                     width: annotation.width * scaleX,
                                     height: annotation.height * scaleY,
                                     borderColor: shapeColor,
-                                    borderWidth: 2 * scaleY
+                                    borderWidth: (annotation.strokeWidth || 2) * scaleY
                                 });
                             } else if (annotation.shapeType === 'circle') {
                                 const radius = Math.min(annotation.width * scaleX, annotation.height * scaleY) / 2;
@@ -1678,7 +1899,7 @@ async function applyAnnotations() {
                                     y: shapeY + radius,
                                     size: radius,
                                     borderColor: shapeColor,
-                                    borderWidth: 2 * scaleY
+                                    borderWidth: (annotation.strokeWidth || 2) * scaleY
                                 });
                             }
                             console.log('Şekil eklendi:', annotation.shapeType);
