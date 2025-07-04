@@ -194,7 +194,7 @@ async function redrawCanvas() {
     // Re-render PDF page
     await renderPage(currentPageNum);
     
-    // Redraw all annotations
+    // Redraw all annotations ONLY for current page
     annotations.forEach(annotation => {
         if (annotation.page === currentPageNum) {
             drawAnnotation(annotation);
@@ -214,6 +214,10 @@ function drawAnnotation(annotation) {
             addImageToOverlay(annotation);
             break;
         case 'form':
+        case 'checkbox':
+        case 'radio':
+        case 'textfield':
+        case 'date':
             addFormElementToOverlay(annotation);
             break;
         case 'draw':
@@ -226,6 +230,21 @@ function drawAnnotation(annotation) {
         case 'circle':
         case 'arrow':
             drawShapeAnnotation(annotation);
+            break;
+        case 'sticky-note':
+            addStickyNoteToOverlay(annotation);
+            break;
+        case 'callout':
+            addCalloutToOverlay(annotation);
+            break;
+        case 'stamp':
+            addStampToOverlay(annotation);
+            break;
+        case 'strikethrough':
+            addStrikethroughToOverlay(annotation);
+            break;
+        case 'underline':
+            addUnderlineToOverlay(annotation);
             break;
     }
 }
@@ -244,6 +263,7 @@ function drawTextAnnotation(annotation) {
     textElement.style.userSelect = 'none';
     textElement.style.padding = '2px';
     textElement.style.border = '1px dashed transparent';
+    textElement.style.zIndex = '10';
     textElement.textContent = annotation.text;
     textElement.setAttribute('data-annotation-id', annotation.id);
     
@@ -765,12 +785,16 @@ async function renderPage(pageNum) {
 // Page navigation functions
 function nextPage() {
     if (currentPageNum < pageCount) {
+        // Clear overlay before changing page
+        overlay.innerHTML = '';
         renderPage(currentPageNum + 1);
     }
 }
 
 function previousPage() {
     if (currentPageNum > 1) {
+        // Clear overlay before changing page
+        overlay.innerHTML = '';
         renderPage(currentPageNum - 1);
     }
 }
@@ -778,6 +802,8 @@ function previousPage() {
 function goToPage(pageNum) {
     const num = parseInt(pageNum);
     if (num >= 1 && num <= pageCount) {
+        // Clear overlay before changing page
+        overlay.innerHTML = '';
         renderPage(num);
     }
 }
@@ -940,6 +966,21 @@ function handleCanvasClick(event) {
             break;
         case 'eraser':
             eraseAt(x, y);
+            break;
+        case 'sticky-note':
+            addStickyNote(x, y);
+            break;
+        case 'callout':
+            addCalloutBox(x, y);
+            break;
+        case 'stamp':
+            addStamp(x, y);
+            break;
+        case 'strikethrough':
+            addStrikethrough(x, y, 100);
+            break;
+        case 'underline':
+            addUnderline(x, y, 100);
             break;
         default:
             // Handle form tools
@@ -1745,29 +1786,24 @@ async function applyAnnotations() {
             const page = pages[pageIndex];
             const { width, height } = page.getSize();
             
-            // Get the original PDF page for coordinate transformation
-            const pdfPage = await pdfDoc.getPage(parseInt(pageNum));
-            const viewport = pdfPage.getViewport({ scale: 1.0 }); // Get unscaled viewport
-            
             console.log(`Sayfa ${pageNum} işleniyor: ${pageAnnotations.length} annotation`);
-            console.log(`PDF boyutları: ${width}x${height}, Viewport: ${viewport.width}x${viewport.height}`);
+            console.log(`PDF boyutları: ${width}x${height}`);
             
             for (const annotation of pageAnnotations) {
                 try {
-                    // Scale annotation coordinates to match PDF coordinate system
-                    const scaleX = width / viewport.width;
-                    const scaleY = height / viewport.height;
+                    // Direct coordinate mapping - no scale conversion needed
+                    // since annotations are already stored in PDF coordinate space
                     
                     switch (annotation.type) {
                         case 'text':
                             const textFont = await currentPdf.embedFont(PDFLib.StandardFonts.Helvetica);
-                            const pdfX = annotation.x * scaleX;
-                            const pdfY = height - (annotation.y * scaleY) - (annotation.size * scaleY);
+                            // PDF coordinate system has origin at bottom-left
+                            const pdfY = height - annotation.y - annotation.size;
                             
                             page.drawText(annotation.text || 'Metin', {
-                                x: pdfX,
+                                x: annotation.x,
                                 y: pdfY,
-                                size: annotation.size * scaleY,
+                                size: annotation.size,
                                 color: PDFLib.rgb(
                                     parseInt(annotation.color.slice(1, 3), 16) / 255,
                                     parseInt(annotation.color.slice(3, 5), 16) / 255,
@@ -1775,17 +1811,16 @@ async function applyAnnotations() {
                                 ),
                                 font: textFont
                             });
-                            console.log('Metin eklendi:', annotation.text, `PDF pos: ${pdfX}, ${pdfY}`);
+                            console.log('Metin eklendi:', annotation.text, `PDF pos: ${annotation.x}, ${pdfY}`);
                             break;
                         
                         case 'highlight':
-                            const hlX = annotation.x * scaleX;
-                            const hlY = height - (annotation.y * scaleY) - (annotation.height * scaleY);
+                            const hlY = height - annotation.y - annotation.height;
                             page.drawRectangle({
-                                x: hlX,
+                                x: annotation.x,
                                 y: hlY,
-                                width: annotation.width * scaleX,
-                                height: annotation.height * scaleY,
+                                width: annotation.width,
+                                height: annotation.height,
                                 color: PDFLib.rgb(
                                     parseInt(annotation.color.slice(1, 3), 16) / 255,
                                     parseInt(annotation.color.slice(3, 5), 16) / 255,
@@ -1809,13 +1844,12 @@ async function applyAnnotations() {
                                         image = await currentPdf.embedJpg(imageBytes);
                                     }
                                     
-                                    const imgX = annotation.x * scaleX;
-                                    const imgY = height - (annotation.y * scaleY) - (annotation.height * scaleY);
+                                    const imgY = height - annotation.y - annotation.height;
                                     page.drawImage(image, {
-                                        x: imgX,
+                                        x: annotation.x,
                                         y: imgY,
-                                        width: annotation.width * scaleX,
-                                        height: annotation.height * scaleY
+                                        width: annotation.width,
+                                        height: annotation.height
                                     });
                                     console.log('Resim eklendi');
                                 } catch (imgError) {
@@ -1843,12 +1877,11 @@ async function applyAnnotations() {
                                     break;
                             }
                             
-                            const formX = annotation.x * scaleX;
-                            const formY = height - (annotation.y * scaleY) - (12 * scaleY);
+                            const formY = height - annotation.y - 12;
                             page.drawText(formText, {
-                                x: formX,
+                                x: annotation.x,
                                 y: formY,
-                                size: 12 * scaleY,
+                                size: 12,
                                 color: PDFLib.rgb(0, 0, 0),
                                 font: formFont
                             });
@@ -1856,14 +1889,12 @@ async function applyAnnotations() {
                             break;
                         
                         case 'draw':
-                            const lineX1 = annotation.x1 * scaleX;
-                            const lineY1 = height - (annotation.y1 * scaleY);
-                            const lineX2 = annotation.x2 * scaleX;
-                            const lineY2 = height - (annotation.y2 * scaleY);
+                            const lineY1 = height - annotation.y1;
+                            const lineY2 = height - annotation.y2;
                             page.drawLine({
-                                start: { x: lineX1, y: lineY1 },
-                                end: { x: lineX2, y: lineY2 },
-                                thickness: (annotation.width || 2) * scaleY,
+                                start: { x: annotation.x1, y: lineY1 },
+                                end: { x: annotation.x2, y: lineY2 },
+                                thickness: annotation.width || 2,
                                 color: PDFLib.rgb(
                                     parseInt(annotation.color.slice(1, 3), 16) / 255,
                                     parseInt(annotation.color.slice(3, 5), 16) / 255,
@@ -1874,32 +1905,34 @@ async function applyAnnotations() {
                             break;
                         
                         case 'shape':
+                        case 'rectangle':
+                        case 'circle':
+                        case 'arrow':
                             const shapeColor = PDFLib.rgb(
                                 parseInt(annotation.color.slice(1, 3), 16) / 255,
                                 parseInt(annotation.color.slice(3, 5), 16) / 255,
                                 parseInt(annotation.color.slice(5, 7), 16) / 255
                             );
                             
-                            const shapeX = annotation.x * scaleX;
-                            const shapeY = height - (annotation.y * scaleY) - (annotation.height * scaleY);
+                            const shapeY = height - annotation.y - annotation.height;
                             
-                            if (annotation.shapeType === 'rectangle') {
+                            if (annotation.shapeType === 'rectangle' || annotation.type === 'rectangle') {
                                 page.drawRectangle({
-                                    x: shapeX,
+                                    x: annotation.x,
                                     y: shapeY,
-                                    width: annotation.width * scaleX,
-                                    height: annotation.height * scaleY,
+                                    width: annotation.width,
+                                    height: annotation.height,
                                     borderColor: shapeColor,
-                                    borderWidth: (annotation.strokeWidth || 2) * scaleY
+                                    borderWidth: annotation.strokeWidth || 2
                                 });
-                            } else if (annotation.shapeType === 'circle') {
-                                const radius = Math.min(annotation.width * scaleX, annotation.height * scaleY) / 2;
+                            } else if (annotation.shapeType === 'circle' || annotation.type === 'circle') {
+                                const radius = Math.min(annotation.width, annotation.height) / 2;
                                 page.drawCircle({
-                                    x: shapeX + radius,
+                                    x: annotation.x + radius,
                                     y: shapeY + radius,
                                     size: radius,
                                     borderColor: shapeColor,
-                                    borderWidth: (annotation.strokeWidth || 2) * scaleY
+                                    borderWidth: annotation.strokeWidth || 2
                                 });
                             }
                             console.log('Şekil eklendi:', annotation.shapeType);
@@ -1918,33 +1951,29 @@ async function applyAnnotations() {
                                         image = await currentPdf.embedJpg(imageBytes);
                                     }
                                     
-                                    const sigX = annotation.x * scaleX;
-                                    const sigY = height - (annotation.y * scaleY) - (annotation.height * scaleY);
+                                    const sigY = height - annotation.y - annotation.height;
                                     page.drawImage(image, {
-                                        x: sigX,
+                                        x: annotation.x,
                                         y: sigY,
-                                        width: annotation.width * scaleX,
-                                        height: annotation.height * scaleY
+                                        width: annotation.width,
+                                        height: annotation.height
                                     });
                                     console.log('İmza eklendi');
-                                } catch (imgError) {
-                                    console.warn('İmza ekleme hatası:', imgError);
+                                } catch (sigError) {
+                                    console.warn('İmza ekleme hatası:', sigError);
                                 }
                             }
                             break;
-                            
-                        default:
-                            console.warn('Bilinmeyen annotation tipi:', annotation.type);
                     }
                 } catch (annotationError) {
-                    console.warn('Annotation işleme hatası:', annotationError, annotation);
+                    console.error('Annotation işleme hatası:', annotationError, annotation);
                 }
             }
         }
         
         console.log('Tüm annotations başarıyla uygulandı');
     } catch (error) {
-        console.error('Annotation uygulama hatası:', error);
+        console.error('Apply annotations hatası:', error);
         throw error;
     }
 }
@@ -2283,6 +2312,7 @@ function addHighlightToOverlay(annotation) {
     const highlightDiv = document.createElement('div');
     highlightDiv.className = 'highlight-overlay';
     highlightDiv.setAttribute('data-annotation-id', annotation.id);
+    highlightDiv.style.position = 'absolute';
     highlightDiv.style.left = (annotation.x * currentScale) + 'px';
     highlightDiv.style.top = (annotation.y * currentScale) + 'px';
     highlightDiv.style.width = (annotation.width * currentScale) + 'px';
@@ -2291,9 +2321,11 @@ function addHighlightToOverlay(annotation) {
     highlightDiv.style.border = '1px solid ' + annotation.color;
     highlightDiv.style.pointerEvents = 'auto';
     highlightDiv.style.cursor = 'move';
+    highlightDiv.style.zIndex = '5';
     
     // Add click handler for selection
-    highlightDiv.addEventListener('click', function() {
+    highlightDiv.addEventListener('click', function(e) {
+        e.stopPropagation();
         selectElement(highlightDiv, annotation);
     });
     
@@ -2548,477 +2580,822 @@ function resetMetadata() {
     showNotification('Metadata sıfırlandı', 'info');
 }
 
-// Page Reordering Functions
-function openPageReorderModal() {
-    if (!currentPdf || pageCount === 0) {
-        showNotification('Önce bir PDF dosyası yükleyin!', 'error');
-        return;
+// Enhanced canvas event listeners for highlight functionality
+canvas.addEventListener('mousedown', function(event) {
+    if (activeTool === 'highlight') {
+        startHighlight(event);
+        event.preventDefault();
+    } else {
+        handleMouseDown(event);
+    }
+});
+
+canvas.addEventListener('mousemove', function(event) {
+    if (activeTool === 'highlight' && isHighlighting) {
+        updateHighlight(event);
+        event.preventDefault();
+    } else {
+        handleMouseMove(event);
+    }
+});
+
+canvas.addEventListener('mouseup', function(event) {
+    if (activeTool === 'highlight' && isHighlighting) {
+        finishHighlight(event);
+        event.preventDefault();
+    } else {
+        handleMouseUp(event);
+    }
+});
+
+// Dark Mode Functions
+function toggleDarkMode() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    document.documentElement.setAttribute('data-theme', newTheme);
+    
+    // Update button text and icon
+    const toggleButton = document.getElementById('darkModeToggle');
+    if (newTheme === 'dark') {
+        toggleButton.innerHTML = '<i class="fas fa-sun"></i> Aydınlık Mod';
+    } else {
+        toggleButton.innerHTML = '<i class="fas fa-moon"></i> Karanlık Mod';
     }
     
-    // Initialize page order arrays
-    originalPageOrder = Array.from({length: pageCount}, (_, i) => i + 1);
-    currentPageOrder = [...originalPageOrder];
+    // Save preference to localStorage
+    localStorage.setItem('theme', newTheme);
     
-    // Generate page thumbnails
-    generatePageThumbnails();
-    
-    document.getElementById('pageReorderModal').style.display = 'block';
+    showNotification(`${newTheme === 'dark' ? 'Karanlık' : 'Aydınlık'} mod etkinleştirildi`, 'success');
 }
 
-function closePageReorderModal() {
-    document.getElementById('pageReorderModal').style.display = 'none';
+function initializeTheme() {
+    // Check for saved theme preference or default to 'light'
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
     
-    // Clean up
-    const thumbnailsContainer = document.getElementById('pageThumbnails');
-    thumbnailsContainer.innerHTML = '';
-}
-
-async function generatePageThumbnails() {
-    const thumbnailsContainer = document.getElementById('pageThumbnails');
-    thumbnailsContainer.innerHTML = '';
-    
-    showNotification('Sayfa önizlemeleri oluşturuluyor...', 'info');
-    
-    for (let i = 1; i <= pageCount; i++) {
-        try {
-            const thumbnail = await createPageThumbnail(i);
-            thumbnailsContainer.appendChild(thumbnail);
-        } catch (error) {
-            console.error(`Sayfa ${i} thumbnail oluşturma hatası:`, error);
-        }
-    }
-    
-    // Add drag and drop event listeners
-    setupDragAndDrop();
-    showNotification('Sayfa önizlemeleri hazır', 'success');
-}
-
-async function createPageThumbnail(pageNum) {
-    const page = await pdfDoc.getPage(pageNum);
-    const scale = 0.3; // Small scale for thumbnails
-    const viewport = page.getViewport({ scale });
-    
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-    
-    const renderContext = {
-        canvasContext: context,
-        viewport: viewport
-    };
-    
-    await page.render(renderContext).promise;
-    
-    const thumbnailDiv = document.createElement('div');
-    thumbnailDiv.className = 'page-thumbnail';
-    thumbnailDiv.draggable = true;
-    thumbnailDiv.setAttribute('data-page', pageNum);
-    
-    thumbnailDiv.appendChild(canvas);
-    
-    const pageLabel = document.createElement('div');
-    pageLabel.className = 'page-number';
-    pageLabel.textContent = `Sayfa ${pageNum}`;
-    thumbnailDiv.appendChild(pageLabel);
-    
-    return thumbnailDiv;
-}
-
-function setupDragAndDrop() {
-    const thumbnails = document.querySelectorAll('.page-thumbnail');
-    
-    thumbnails.forEach((thumbnail, index) => {
-        thumbnail.addEventListener('dragstart', handleDragStart);
-        thumbnail.addEventListener('dragover', handleDragOver);
-        thumbnail.addEventListener('drop', handleDrop);
-        thumbnail.addEventListener('dragend', handleDragEnd);
-    });
-}
-
-function handleDragStart(e) {
-    isDraggingPage = true;
-    draggedPageIndex = parseInt(e.target.getAttribute('data-page')) - 1;
-    e.target.classList.add('drag-source');
-    e.dataTransfer.effectAllowed = 'move';
-}
-
-function handleDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    
-    if (!e.target.classList.contains('page-thumbnail')) return;
-    
-    e.target.classList.add('drag-over');
-}
-
-function handleDrop(e) {
-    e.preventDefault();
-    
-    if (!e.target.classList.contains('page-thumbnail')) return;
-    
-    const targetPageIndex = parseInt(e.target.getAttribute('data-page')) - 1;
-    
-    if (draggedPageIndex !== targetPageIndex) {
-        // Reorder the array
-        const draggedPage = currentPageOrder[draggedPageIndex];
-        currentPageOrder.splice(draggedPageIndex, 1);
-        currentPageOrder.splice(targetPageIndex, 0, draggedPage);
-        
-        // Update visual order
-        updateThumbnailOrder();
-    }
-    
-    // Clean up drag states
-    document.querySelectorAll('.page-thumbnail').forEach(thumb => {
-        thumb.classList.remove('drag-over', 'drag-source');
-    });
-}
-
-function handleDragEnd(e) {
-    isDraggingPage = false;
-    draggedPageIndex = -1;
-    
-    // Clean up all drag states
-    document.querySelectorAll('.page-thumbnail').forEach(thumb => {
-        thumb.classList.remove('drag-over', 'drag-source');
-    });
-}
-
-function updateThumbnailOrder() {
-    const container = document.getElementById('pageThumbnails');
-    const thumbnails = Array.from(container.children);
-    
-    // Reorder thumbnails based on currentPageOrder
-    currentPageOrder.forEach((pageNum, index) => {
-        const thumbnail = thumbnails.find(t => parseInt(t.getAttribute('data-page')) === pageNum);
-        if (thumbnail) {
-            container.appendChild(thumbnail);
-            
-            // Update page number display
-            const pageLabel = thumbnail.querySelector('.page-number');
-            pageLabel.textContent = `Sayfa ${index + 1}`;
-        }
-    });
-}
-
-async function applyPageReorder() {
-    if (JSON.stringify(currentPageOrder) === JSON.stringify(originalPageOrder)) {
-        showNotification('Sayfa sırası değişmemiş', 'info');
-        closePageReorderModal();
-        return;
-    }
-    
-    try {
-        showNotification('Sayfa sırası uygulanıyor...', 'info');
-        
-        // Create new PDF with reordered pages
-        const newPdf = await PDFLib.PDFDocument.create();
-        
-        for (const pageNum of currentPageOrder) {
-            const [copiedPage] = await newPdf.copyPages(currentPdf, [pageNum - 1]);
-            newPdf.addPage(copiedPage);
-        }
-        
-        // Copy metadata
-        if (pdfMetadata.title) newPdf.setTitle(pdfMetadata.title);
-        if (pdfMetadata.author) newPdf.setAuthor(pdfMetadata.author);
-        if (pdfMetadata.subject) newPdf.setSubject(pdfMetadata.subject);
-        if (pdfMetadata.creator) newPdf.setCreator(pdfMetadata.creator);
-        
-        // Replace current PDF
-        currentPdf = newPdf;
-        
-        // Update page count and reset to first page
-        const pages = currentPdf.getPages();
-        pageCount = pages.length;
-        currentPageNum = 1;
-        
-        // Re-render PDF
-        await renderPage(currentPageNum);
-        updatePageInfo();
-        
-        // Update annotations page numbers
-        updateAnnotationsAfterReorder();
-        
-        saveState();
-        closePageReorderModal();
-        showNotification(`Sayfa sırası başarıyla güncellendi! ${pageCount} sayfa yeniden sıralandı.`, 'success');
-        
-    } catch (error) {
-        console.error('Sayfa sıralama hatası:', error);
-        showNotification('Sayfa sırası uygulanırken bir hata oluştu: ' + error.message, 'error');
+    // Update button text and icon
+    const toggleButton = document.getElementById('darkModeToggle');
+    if (savedTheme === 'dark') {
+        toggleButton.innerHTML = '<i class="fas fa-sun"></i> Aydınlık Mod';
+    } else {
+        toggleButton.innerHTML = '<i class="fas fa-moon"></i> Karanlık Mod';
     }
 }
 
-function updateAnnotationsAfterReorder() {
-    // Update annotation page numbers according to new order
-    annotations.forEach(annotation => {
-        const oldPageIndex = annotation.page - 1;
-        const newPageIndex = currentPageOrder.indexOf(originalPageOrder[oldPageIndex]);
-        if (newPageIndex !== -1) {
-            annotation.page = newPageIndex + 1;
-        }
-    });
-}
-
-function resetPageOrder() {
-    currentPageOrder = [...originalPageOrder];
-    updateThumbnailOrder();
-    showNotification('Sayfa sırası sıfırlandı', 'info');
-}
-
-// OCR Functions
-async function performOCR() {
-    if (!currentPdf || pageCount === 0) {
-        showNotification('Önce bir PDF dosyası yükleyin!', 'error');
-        return;
-    }
+// Initialize the application
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('PDF Editor Z başlatılıyor...');
     
-    if (isOCRRunning) {
-        showNotification('OCR işlemi zaten çalışıyor...', 'warning');
-        return;
-    }
+    // Initialize theme first
+    initializeTheme();
     
-    openOCRModal();
-    await startOCRProcess();
-}
-
-function openOCRModal() {
-    document.getElementById('ocrModal').style.display = 'block';
+    // Initialize sidebar state
+    initializeSidebar();
     
-    // Reset modal state
-    document.getElementById('ocrResults').style.display = 'none';
-    document.getElementById('ocrText').value = '';
-    updateOCRProgress('OCR başlatılıyor...', 0);
-}
-
-function closeOCRModal() {
-    document.getElementById('ocrModal').style.display = 'none';
-    
-    // Stop OCR if running
-    if (isOCRRunning && ocrWorker) {
-        ocrWorker.terminate();
-        ocrWorker = null;
-        isOCRRunning = false;
-    }
-}
-
-async function startOCRProcess() {
-    isOCRRunning = true;
-    
-    try {
-        updateOCRProgress('Tesseract.js yükleniyor...', 10);
-        
-        // Initialize Tesseract worker
-        ocrWorker = await Tesseract.createWorker('tur+eng', 1, {
-            logger: m => {
-                if (m.status === 'recognizing text') {
-                    const progress = Math.round(m.progress * 80) + 10; // 10-90%
-                    updateOCRProgress(`Sayfa ${currentPageNum} taranıyor... ${Math.round(m.progress * 100)}%`, progress);
+    // Check if all libraries are loaded
+    setTimeout(() => {
+        if (!checkLibraries()) {
+            loadAlternativeCDNs().then(success => {
+                if (success) {
+                    console.log('✅ Alternatif CDN\'ler başarıyla yüklendi');
+                } else {
+                    console.error('❌ Kütüphaneler yüklenemedi');
+                    alert('Gerekli kütüphaneler yüklenemedi. Lütfen internet bağlantınızı kontrol edin.');
                 }
+            });
+        }
+    }, 100);
+    
+    // Add modern UI elements
+    addModernUIElements();
+    
+    // Enable auto-save
+    enableAutoSave();
+    
+    // Initialize keyboard shortcuts
+    initializeKeyboardShortcuts();
+    
+    // Initialize context menu
+    initializeContextMenu();
+    
+    console.log('🚀 PDF Editor Z hazır!');
+});
+
+// Keyboard Shortcuts
+function initializeKeyboardShortcuts() {
+    document.addEventListener('keydown', function(event) {
+        // Prevent default for our shortcuts
+        const isCtrl = event.ctrlKey || event.metaKey;
+        
+        // Global shortcuts (work everywhere)
+        if (isCtrl) {
+            switch (event.key.toLowerCase()) {
+                case 'z':
+                    if (!event.shiftKey) {
+                        event.preventDefault();
+                        undo();
+                        return;
+                    }
+                    break;
+                case 'y':
+                    event.preventDefault();
+                    redo();
+                    return;
+                case 's':
+                    event.preventDefault();
+                    downloadPDF();
+                    return;
+                case 'o':
+                    event.preventDefault();
+                    document.getElementById('pdfInput').click();
+                    return;
+                case 'd':
+                    event.preventDefault();
+                    toggleDarkMode();
+                    return;
+                case 'h':
+                    event.preventDefault();
+                    showHelp();
+                    return;
+                case 'a':
+                    event.preventDefault();
+                    selectAllAnnotations();
+                    return;
+                case 'delete':
+                case 'backspace':
+                    event.preventDefault();
+                    deleteSelectedAnnotations();
+                    return;
             }
+        }
+        
+        // Tool shortcuts (only when not editing text)
+        if (!isEditingText && !event.target.matches('input, textarea')) {
+            switch (event.key.toLowerCase()) {
+                case 'c':
+                    event.preventDefault();
+                    activateTool('cursor');
+                    break;
+                case 't':
+                    event.preventDefault();
+                    activateTool('text');
+                    break;
+                case 'h':
+                    if (!event.ctrlKey) {
+                        event.preventDefault();
+                        activateTool('highlight');
+                    }
+                    break;
+                case 'i':
+                    event.preventDefault();
+                    activateTool('image');
+                    break;
+                case 'd':
+                    if (!event.ctrlKey) {
+                        event.preventDefault();
+                        activateTool('draw');
+                    }
+                    break;
+                case 'e':
+                    event.preventDefault();
+                    activateTool('eraser');
+                    break;
+                case 's':
+                    if (!event.ctrlKey) {
+                        event.preventDefault();
+                        activateTool('signature');
+                    }
+                    break;
+                case 'r':
+                    event.preventDefault();
+                    selectShape('rectangle');
+                    activateTool('shape');
+                    break;
+                case 'escape':
+                    event.preventDefault();
+                    deselectAllElements();
+                    activateTool('cursor');
+                    break;
+                case 'delete':
+                    event.preventDefault();
+                    deleteSelectedAnnotations();
+                    break;
+                case 'arrowleft':
+                    event.preventDefault();
+                    previousPage();
+                    break;
+                case 'arrowright':
+                    event.preventDefault();
+                    nextPage();
+                    break;
+                case '+':
+                case '=':
+                    event.preventDefault();
+                    zoomIn();
+                    break;
+                case '-':
+                    event.preventDefault();
+                    zoomOut();
+                    break;
+                case '0':
+                    event.preventDefault();
+                    resetZoom();
+                    break;
+            }
+        }
+        
+        // Numeric shortcuts for pages
+        if (!isEditingText && event.key >= '1' && event.key <= '9') {
+            const pageNum = parseInt(event.key);
+            if (pageNum <= pageCount) {
+                event.preventDefault();
+                goToPage(pageNum);
+            }
+        }
+    });
+}
+
+function selectAllAnnotations() {
+    if (!currentPdf || annotations.length === 0) {
+        showNotification('Seçilecek annotation bulunamadı', 'warning');
+        return;
+    }
+    
+    // Select all annotations on current page
+    const currentPageAnnotations = annotations.filter(a => a.page === currentPageNum);
+    if (currentPageAnnotations.length === 0) {
+        showNotification('Bu sayfada seçilecek element bulunamadı', 'warning');
+        return;
+    }
+    
+    // Visual feedback for all annotations
+    document.querySelectorAll('[data-annotation-id]').forEach(element => {
+        element.style.border = '2px solid var(--accent-color)';
+        element.classList.add('selected');
+    });
+    
+    showNotification(`${currentPageAnnotations.length} element seçildi`, 'success');
+}
+
+function deleteSelectedAnnotations() {
+    const selectedElements = document.querySelectorAll('[data-annotation-id].selected');
+    if (selectedElements.length === 0 && !selectedElement) {
+        showNotification('Silinecek element seçilmemiş', 'warning');
+        return;
+    }
+    
+    saveState(); // Save state before deletion
+    
+    let deletedCount = 0;
+    
+    // Delete currently selected element
+    if (selectedElement) {
+        const annotationId = selectedElement.getAttribute('data-annotation-id');
+        const index = annotations.findIndex(a => a.id === annotationId);
+        if (index !== -1) {
+            annotations.splice(index, 1);
+            selectedElement.remove();
+            selectedElement = null;
+            deletedCount++;
+        }
+    }
+    
+    // Delete all selected elements
+    selectedElements.forEach(element => {
+        if (element !== selectedElement) { // Avoid double deletion
+            const annotationId = element.getAttribute('data-annotation-id');
+            const index = annotations.findIndex(a => a.id === annotationId);
+            if (index !== -1) {
+                annotations.splice(index, 1);
+                element.remove();
+                deletedCount++;
+            }
+        }
+    });
+    
+    // Clear resize handles
+    document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+    
+    showNotification(`${deletedCount} element silindi`, 'success');
+}
+
+function resetZoom() {
+    currentScale = 1.0;
+    renderPage(currentPageNum);
+    updateZoomLevel();
+    showNotification('Zoom sıfırlandı', 'info');
+}
+
+// Sidebar Toggle Functions
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const isCollapsed = sidebar.classList.contains('collapsed');
+    
+    if (isCollapsed) {
+        sidebar.classList.remove('collapsed');
+        localStorage.setItem('sidebarCollapsed', 'false');
+    } else {
+        sidebar.classList.add('collapsed');
+        localStorage.setItem('sidebarCollapsed', 'true');
+    }
+}
+
+function initializeSidebar() {
+    const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+    const sidebar = document.getElementById('sidebar');
+    
+    if (isCollapsed) {
+        sidebar.classList.add('collapsed');
+    }
+}
+
+// Context Menu Functions
+let contextMenuTarget = null;
+let copiedAnnotation = null;
+
+function initializeContextMenu() {
+    const contextMenu = document.getElementById('contextMenu');
+    
+    // Add context menu to PDF overlay
+    overlay.addEventListener('contextmenu', function(event) {
+        event.preventDefault();
+        
+        // Check if right-clicked on an annotation
+        const target = event.target.closest('[data-annotation-id]');
+        contextMenuTarget = target;
+        
+        showContextMenu(event.clientX, event.clientY, target);
+    });
+    
+    // Add context menu to canvas for general actions
+    canvas.addEventListener('contextmenu', function(event) {
+        event.preventDefault();
+        contextMenuTarget = null;
+        showContextMenu(event.clientX, event.clientY, null);
+    });
+    
+    // Hide context menu on click elsewhere
+    document.addEventListener('click', function(event) {
+        if (!contextMenu.contains(event.target)) {
+            hideContextMenu();
+        }
+    });
+    
+    // Hide on scroll
+    document.addEventListener('scroll', hideContextMenu);
+    window.addEventListener('resize', hideContextMenu);
+}
+
+function showContextMenu(x, y, target) {
+    const contextMenu = document.getElementById('contextMenu');
+    const items = contextMenu.querySelectorAll('.context-menu-item');
+    
+    // Enable/disable menu items based on context
+    items.forEach(item => {
+        const action = item.getAttribute('onclick')?.match(/handleContextAction\('(.+?)'\)/)?.[1];
+        if (action) {
+            item.style.display = shouldShowContextAction(action, target) ? 'flex' : 'none';
+        }
+    });
+    
+    // Position the menu
+    contextMenu.style.left = x + 'px';
+    contextMenu.style.top = y + 'px';
+    contextMenu.style.display = 'block';
+    
+    // Ensure menu stays within viewport
+    const rect = contextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+        contextMenu.style.left = (x - rect.width) + 'px';
+    }
+    if (rect.bottom > window.innerHeight) {
+        contextMenu.style.top = (y - rect.height) + 'px';
+    }
+    
+    // Show with animation
+    setTimeout(() => {
+        contextMenu.classList.add('show');
+    }, 10);
+}
+
+function hideContextMenu() {
+    const contextMenu = document.getElementById('contextMenu');
+    contextMenu.classList.remove('show');
+    setTimeout(() => {
+        contextMenu.style.display = 'none';
+    }, 200);
+}
+
+function shouldShowContextAction(action, target) {
+    switch (action) {
+        case 'copy':
+        case 'duplicate':
+        case 'delete':
+        case 'bringToFront':
+        case 'sendToBack':
+        case 'properties':
+            return target !== null; // Only show if annotation is selected
+        case 'paste':
+            return copiedAnnotation !== null; // Only show if something is copied
+        default:
+            return true;
+    }
+}
+
+function handleContextAction(action) {
+    hideContextMenu();
+    
+    switch (action) {
+        case 'copy':
+            copyAnnotation();
+            break;
+        case 'paste':
+            pasteAnnotation();
+            break;
+        case 'duplicate':
+            duplicateAnnotation();
+            break;
+        case 'delete':
+            deleteContextTarget();
+            break;
+        case 'bringToFront':
+            bringToFront();
+            break;
+        case 'sendToBack':
+            sendToBack();
+            break;
+        case 'properties':
+            showPropertiesModal();
+            break;
+    }
+}
+
+function copyAnnotation() {
+    if (!contextMenuTarget) return;
+    
+    const annotationId = contextMenuTarget.getAttribute('data-annotation-id');
+    const annotation = annotations.find(a => a.id === annotationId);
+    
+    if (annotation) {
+        copiedAnnotation = JSON.parse(JSON.stringify(annotation));
+        showNotification('Element kopyalandı', 'success');
+    }
+}
+
+function pasteAnnotation() {
+    if (!copiedAnnotation) return;
+    
+    // Create new annotation with offset position
+    const newAnnotation = JSON.parse(JSON.stringify(copiedAnnotation));
+    newAnnotation.id = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9);
+    newAnnotation.x += 20; // Offset slightly
+    newAnnotation.y += 20;
+    newAnnotation.page = currentPageNum;
+    
+    annotations.push(newAnnotation);
+    drawAnnotation(newAnnotation);
+    saveState();
+    
+    showNotification('Element yapıştırıldı', 'success');
+}
+
+function duplicateAnnotation() {
+    if (!contextMenuTarget) return;
+    
+    copyAnnotation();
+    pasteAnnotation();
+}
+
+function deleteContextTarget() {
+    if (!contextMenuTarget) return;
+    
+    const annotationId = contextMenuTarget.getAttribute('data-annotation-id');
+    const index = annotations.findIndex(a => a.id === annotationId);
+    
+    if (index !== -1) {
+        saveState();
+        annotations.splice(index, 1);
+        contextMenuTarget.remove();
+        showNotification('Element silindi', 'success');
+    }
+}
+
+function bringToFront() {
+    if (!contextMenuTarget) return;
+    
+    contextMenuTarget.style.zIndex = (parseInt(contextMenuTarget.style.zIndex) || 0) + 1000;
+    showNotification('Element öne getirildi', 'info');
+}
+
+function sendToBack() {
+    if (!contextMenuTarget) return;
+    
+    contextMenuTarget.style.zIndex = '1';
+    showNotification('Element arkaya gönderildi', 'info');
+}
+
+function showPropertiesModal() {
+    if (!contextMenuTarget) return;
+    
+    const annotationId = contextMenuTarget.getAttribute('data-annotation-id');
+    const annotation = annotations.find(a => a.id === annotationId);
+    
+    if (annotation) {
+        // Create a simple properties dialog
+        const properties = [
+            `Type: ${annotation.type}`,
+            `X: ${Math.round(annotation.x)}`,
+            `Y: ${Math.round(annotation.y)}`,
+            `Page: ${annotation.page}`
+        ];
+        
+        if (annotation.width) properties.push(`Width: ${Math.round(annotation.width)}`);
+        if (annotation.height) properties.push(`Height: ${Math.round(annotation.height)}`);
+        if (annotation.text) properties.push(`Text: ${annotation.text}`);
+        if (annotation.color) properties.push(`Color: ${annotation.color}`);
+        
+        alert('Element Özellikleri:\n\n' + properties.join('\n'));
+    }
+}
+
+// Advanced Annotation Tools
+let currentStamp = null;
+
+// Stamp Library Functions
+const stampLibrary = {
+    approval: [
+        { name: 'ONAYLANDI', text: 'ONAYLANDI', color: '#10b981' },
+        { name: 'REDDEDİLDİ', text: 'REDDEDİLDİ', color: '#ef4444' },
+        { name: 'BEKLEMEDE', text: 'BEKLEMEDE', color: '#f59e0b' },
+        { name: 'İNCELENDİ', text: 'İNCELENDİ', color: '#3b82f6' }
+    ],
+    status: [
+        { name: 'TAMAMLANDI', text: 'TAMAMLANDI', color: '#10b981' },
+        { name: 'DEVAM EDİYOR', text: 'DEVAM EDİYOR', color: '#f59e0b' },
+        { name: 'İPTAL', text: 'İPTAL', color: '#ef4444' },
+        { name: 'YENI', text: 'YENI', color: '#8b5cf6' }
+    ],
+    date: [
+        { name: 'Bugün', text: new Date().toLocaleDateString('tr-TR'), color: '#3b82f6' },
+        { name: 'Bu Hafta', text: 'Bu Hafta', color: '#3b82f6' },
+        { name: 'Bu Ay', text: 'Bu Ay', color: '#3b82f6' },
+        { name: 'Tarih', text: 'GG/AA/YYYY', color: '#3b82f6' }
+    ],
+    custom: [
+        { name: 'GİZLİ', text: 'GİZLİ', color: '#ef4444' },
+        { name: 'ÖNEMLİ', text: 'ÖNEMLİ', color: '#f59e0b' },
+        { name: 'KOPYA', text: 'KOPYA', color: '#6b7280' },
+        { name: 'ORJİNAL', text: 'ORJİNAL', color: '#10b981' }
+    ]
+};
+
+function openStampLibrary() {
+    document.getElementById('stampLibraryModal').style.display = 'block';
+    populateStampGrid('approval');
+    
+    // Add event listeners for category buttons
+    document.querySelectorAll('.stamp-category').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.stamp-category').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            populateStampGrid(this.dataset.category);
+        });
+    });
+}
+
+function closeStampLibrary() {
+    document.getElementById('stampLibraryModal').style.display = 'none';
+}
+
+function populateStampGrid(category) {
+    const grid = document.getElementById('stampGrid');
+    grid.innerHTML = '';
+    
+    stampLibrary[category].forEach(stamp => {
+        const stampElement = document.createElement('div');
+        stampElement.className = 'stamp-item';
+        stampElement.innerHTML = `
+            <div class="stamp-preview" style="color: ${stamp.color}; border-color: ${stamp.color};">
+                ${stamp.text.substring(0, 4)}
+            </div>
+            <div class="stamp-name">${stamp.name}</div>
+        `;
+        
+        stampElement.addEventListener('click', () => {
+            currentStamp = stamp;
+            activateTool('stamp');
+            closeStampLibrary();
+            showNotification(`${stamp.name} mührü seçildi`, 'success');
         });
         
-        updateOCRProgress('OCR motoru hazırlandı', 20);
-        
-        let allText = '';
-        let processedPages = 0;
-        
-        // Process current page or all pages based on user preference
-        const processAllPages = confirm('Tüm sayfaları taramak istiyor musunuz? (İptal = Sadece mevcut sayfa)');
-        const pagesToProcess = processAllPages ? pageCount : 1;
-        const startPage = processAllPages ? 1 : currentPageNum;
-        
-        for (let i = 0; i < pagesToProcess; i++) {
-            const pageNum = startPage + i;
-            const pageProgress = 20 + (i / pagesToProcess) * 70;
-            
-            updateOCRProgress(`Sayfa ${pageNum} işleniyor...`, pageProgress);
-            
-            try {
-                const pageText = await extractTextFromPage(pageNum);
-                if (pageText.trim()) {
-                    allText += `\n--- Sayfa ${pageNum} ---\n${pageText}\n`;
-                }
-                
-                processedPages++;
-            } catch (pageError) {
-                console.warn(`Sayfa ${pageNum} OCR hatası:`, pageError);
-                allText += `\n--- Sayfa ${pageNum} ---\nBu sayfada metin tanınamadı.\n`;
-            }
-        }
-        
-        updateOCRProgress('OCR tamamlandı!', 100);
-        
-        // Show results
-        setTimeout(() => {
-            showOCRResults(allText, processedPages);
-        }, 500);
-        
-    } catch (error) {
-        console.error('OCR hatası:', error);
-        updateOCRProgress('OCR işlemi başarısız oldu', 0);
-        showNotification('OCR işlemi sırasında bir hata oluştu: ' + error.message, 'error');
-    } finally {
-        isOCRRunning = false;
-        if (ocrWorker) {
-            await ocrWorker.terminate();
-            ocrWorker = null;
-        }
-    }
+        grid.appendChild(stampElement);
+    });
 }
 
-async function extractTextFromPage(pageNum) {
-    // Get page as canvas
-    const page = await pdfDoc.getPage(pageNum);
-    const scale = 2.0; // Higher scale for better OCR accuracy
-    const viewport = page.getViewport({ scale });
+// Advanced annotation creation functions
+function addStickyNote(x, y) {
+    saveState();
     
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-    
-    const renderContext = {
-        canvasContext: context,
-        viewport: viewport
+    const annotation = {
+        id: Date.now().toString() + '_note',
+        type: 'sticky-note',
+        x: x,
+        y: y,
+        width: 120,
+        height: 80,
+        text: 'Not yazın...',
+        color: '#f59e0b',
+        page: currentPageNum
     };
     
-    await page.render(renderContext).promise;
-    
-    // Convert canvas to image data for OCR
-    const imageData = canvas.toDataURL('image/png');
-    
-    // Perform OCR
-    const { data: { text } } = await ocrWorker.recognize(imageData);
-    
-    return text;
+    annotations.push(annotation);
+    addStickyNoteToOverlay(annotation);
+    showNotification('Yapışkan not eklendi', 'success');
 }
 
-function updateOCRProgress(text, percentage) {
-    document.getElementById('ocrStatus').textContent = text;
-    document.getElementById('ocrProgressText').textContent = text;
-    document.getElementById('ocrProgressFill').style.width = percentage + '%';
+function addStickyNoteToOverlay(annotation) {
+    const noteDiv = document.createElement('div');
+    noteDiv.className = 'sticky-note';
+    noteDiv.setAttribute('data-annotation-id', annotation.id);
+    noteDiv.style.left = (annotation.x * currentScale) + 'px';
+    noteDiv.style.top = (annotation.y * currentScale) + 'px';
+    noteDiv.style.width = (annotation.width * currentScale) + 'px';
+    noteDiv.style.height = (annotation.height * currentScale) + 'px';
+    noteDiv.contentEditable = true;
+    noteDiv.textContent = annotation.text;
+    
+    noteDiv.addEventListener('blur', function() {
+        annotation.text = this.textContent;
+        saveState();
+    });
+    
+    noteDiv.addEventListener('click', () => selectElement(noteDiv, annotation));
+    
+    overlay.appendChild(noteDiv);
 }
 
-function showOCRResults(text, processedPages) {
-    document.getElementById('ocrText').value = text;
-    document.getElementById('ocrResults').style.display = 'block';
+function addCalloutBox(x, y) {
+    saveState();
     
-    const statusEl = document.getElementById('ocrStatus');
-    statusEl.innerHTML = `<i class="fas fa-check-circle" style="color: #28a745;"></i> OCR Tamamlandı!`;
+    const annotation = {
+        id: Date.now().toString() + '_callout',
+        type: 'callout',
+        x: x,
+        y: y,
+        width: 150,
+        height: 60,
+        text: 'Açıklama yazın...',
+        color: colorPicker.value,
+        page: currentPageNum
+    };
     
-    document.getElementById('ocrProgressText').textContent = `${processedPages} sayfa başarıyla işlendi`;
-    
-    showNotification(`OCR tamamlandı! ${processedPages} sayfa işlendi.`, 'success');
+    annotations.push(annotation);
+    addCalloutToOverlay(annotation);
+    showNotification('Açıklama kutusu eklendi', 'success');
 }
 
-function addOCRTextToPDF() {
-    const text = document.getElementById('ocrText').value;
+function addCalloutToOverlay(annotation) {
+    const calloutDiv = document.createElement('div');
+    calloutDiv.className = 'callout-box';
+    calloutDiv.setAttribute('data-annotation-id', annotation.id);
+    calloutDiv.style.left = (annotation.x * currentScale) + 'px';
+    calloutDiv.style.top = (annotation.y * currentScale) + 'px';
+    calloutDiv.style.width = (annotation.width * currentScale) + 'px';
+    calloutDiv.style.borderColor = annotation.color;
+    calloutDiv.contentEditable = true;
+    calloutDiv.textContent = annotation.text;
     
-    if (!text.trim()) {
-        showNotification('Eklenecek metin bulunamadı!', 'warning');
+    calloutDiv.addEventListener('blur', function() {
+        annotation.text = this.textContent;
+        saveState();
+    });
+    
+    calloutDiv.addEventListener('click', () => selectElement(calloutDiv, annotation));
+    
+    overlay.appendChild(calloutDiv);
+}
+
+function addStamp(x, y) {
+    if (!currentStamp) {
+        showNotification('Önce bir mühür seçin!', 'warning');
+        openStampLibrary();
         return;
     }
-    
-    // Add text as annotation to current page
-    const lines = text.split('\n').filter(line => line.trim());
-    let yOffset = 50;
-    const lineHeight = 20;
-    
-    lines.forEach((line, index) => {
-        if (line.trim() && !line.startsWith('---')) {
-            const annotation = {
-                id: Date.now().toString() + '-' + index,
-                type: 'text',
-                page: currentPageNum,
-                x: 50,
-                y: yOffset,
-                text: line.trim(),
-                size: 12,
-                color: '#000000'
-            };
-            
-            annotations.push(annotation);
-            addModernTextElement(annotation);
-            yOffset += lineHeight;
-        }
-    });
     
     saveState();
-    closeOCRModal();
-    showNotification(`${lines.length} satır metin PDF'e eklendi!`, 'success');
+    
+    const annotation = {
+        id: Date.now().toString() + '_stamp',
+        type: 'stamp',
+        x: x,
+        y: y,
+        width: 100,
+        height: 40,
+        text: currentStamp.text,
+        color: currentStamp.color,
+        page: currentPageNum
+    };
+    
+    annotations.push(annotation);
+    addStampToOverlay(annotation);
+    showNotification('Mühür eklendi', 'success');
 }
 
-function copyOCRText() {
-    const text = document.getElementById('ocrText').value;
+function addStampToOverlay(annotation) {
+    const stampDiv = document.createElement('div');
+    stampDiv.className = 'stamp-annotation';
+    stampDiv.setAttribute('data-annotation-id', annotation.id);
+    stampDiv.style.position = 'absolute';
+    stampDiv.style.left = (annotation.x * currentScale) + 'px';
+    stampDiv.style.top = (annotation.y * currentScale) + 'px';
+    stampDiv.style.width = (annotation.width * currentScale) + 'px';
+    stampDiv.style.height = (annotation.height * currentScale) + 'px';
+    stampDiv.style.border = `2px solid ${annotation.color}`;
+    stampDiv.style.borderRadius = '6px';
+    stampDiv.style.display = 'flex';
+    stampDiv.style.alignItems = 'center';
+    stampDiv.style.justifyContent = 'center';
+    stampDiv.style.background = 'rgba(255, 255, 255, 0.9)';
+    stampDiv.style.color = annotation.color;
+    stampDiv.style.fontWeight = 'bold';
+    stampDiv.style.fontSize = '10px';
+    stampDiv.style.cursor = 'move';
+    stampDiv.textContent = annotation.text;
     
-    if (!text.trim()) {
-        showNotification('Kopyalanacak metin bulunamadı!', 'warning');
-        return;
-    }
+    stampDiv.addEventListener('click', () => selectElement(stampDiv, annotation));
     
-    navigator.clipboard.writeText(text).then(() => {
-        showNotification('Metin panoya kopyalandı!', 'success');
-    }).catch(err => {
-        console.error('Kopyalama hatası:', err);
-        showNotification('Metin kopyalanamadı', 'error');
-    });
+    overlay.appendChild(stampDiv);
 }
 
-async function autoExtractText() {
-    if (!currentPdf || pageCount === 0) {
-        showNotification('Önce bir PDF dosyası yükleyin!', 'error');
-        return;
-    }
+function addStrikethrough(x, y, width) {
+    saveState();
     
-    try {
-        showNotification('PDF\'den metin çıkarılıyor...', 'info');
-        
-        // Try to extract text using PDF.js text content
-        const page = await pdfDoc.getPage(currentPageNum);
-        const textContent = await page.getTextContent();
-        
-        let extractedText = '';
-        textContent.items.forEach(item => {
-            extractedText += item.str + ' ';
-        });
-        
-        if (extractedText.trim()) {
-            // Add extracted text to modal
-            document.getElementById('ocrText').value = extractedText;
-            document.getElementById('ocrResults').style.display = 'block';
-            document.getElementById('ocrStatus').innerHTML = '<i class="fas fa-check-circle" style="color: #28a745;"></i> Metin Çıkarıldı!';
-            document.getElementById('ocrProgressText').textContent = 'PDF\'den mevcut metin çıkarıldı';
-            document.getElementById('ocrProgressFill').style.width = '100%';
-            
-            openOCRModal();
-            showNotification('PDF\'den metin başarıyla çıkarıldı!', 'success');
-        } else {
-            showNotification('Bu sayfada çıkarılabilir metin bulunamadı. OCR tarama deneyin.', 'warning');
-        }
-        
-    } catch (error) {
-        console.error('Metin çıkarma hatası:', error);
-        showNotification('Metin çıkarma işlemi başarısız oldu. OCR tarama deneyin.', 'error');
-    }
+    const annotation = {
+        id: Date.now().toString() + '_strike',
+        type: 'strikethrough',
+        x: x,
+        y: y,
+        width: width || 100,
+        height: 2,
+        color: '#ef4444',
+        page: currentPageNum
+    };
+    
+    annotations.push(annotation);
+    addStrikethroughToOverlay(annotation);
+    showNotification('Üstü çizili eklendi', 'success');
 }
 
-function addModernTextElement(annotation) {
-    const textDiv = document.createElement('div');
-    textDiv.className = 'text-annotation';
-    textDiv.setAttribute('data-annotation-id', annotation.id);
-    textDiv.style.left = (annotation.x * currentScale) + 'px';
-    textDiv.style.top = (annotation.y * currentScale) + 'px';
-    textDiv.style.fontSize = (annotation.size * currentScale) + 'px';
-    textDiv.style.color = annotation.color;
-    textDiv.textContent = annotation.text;
+function addStrikethroughToOverlay(annotation) {
+    const strikeDiv = document.createElement('div');
+    strikeDiv.className = 'strikethrough-annotation';
+    strikeDiv.setAttribute('data-annotation-id', annotation.id);
+    strikeDiv.style.position = 'absolute';
+    strikeDiv.style.left = (annotation.x * currentScale) + 'px';
+    strikeDiv.style.top = (annotation.y * currentScale) + 'px';
+    strikeDiv.style.width = (annotation.width * currentScale) + 'px';
+    strikeDiv.style.height = '2px';
+    strikeDiv.style.background = annotation.color;
+    strikeDiv.style.cursor = 'move';
     
-    // Add click handler for selection
-    textDiv.addEventListener('click', function() {
-        selectElement(textDiv, annotation);
-    });
+    strikeDiv.addEventListener('click', () => selectElement(strikeDiv, annotation));
     
-    overlay.appendChild(textDiv);
-} 
+    overlay.appendChild(strikeDiv);
+}
+
+function addUnderline(x, y, width) {
+    saveState();
+    
+    const annotation = {
+        id: Date.now().toString() + '_underline',
+        type: 'underline',
+        x: x,
+        y: y + 5,
+        width: width || 100,
+        height: 2,
+        color: colorPicker.value,
+        page: currentPageNum
+    };
+    
+    annotations.push(annotation);
+    addUnderlineToOverlay(annotation);
+    showNotification('Altı çizili eklendi', 'success');
+}
+
+function addUnderlineToOverlay(annotation) {
+    const underlineDiv = document.createElement('div');
+    underlineDiv.className = 'underline-annotation';
+    underlineDiv.setAttribute('data-annotation-id', annotation.id);
+    underlineDiv.style.position = 'absolute';
+    underlineDiv.style.left = (annotation.x * currentScale) + 'px';
+    underlineDiv.style.top = (annotation.y * currentScale) + 'px';
+    underlineDiv.style.width = (annotation.width * currentScale) + 'px';
+    underlineDiv.style.height = '2px';
+    underlineDiv.style.background = annotation.color;
+    underlineDiv.style.cursor = 'move';
+    
+    underlineDiv.addEventListener('click', () => selectElement(underlineDiv, annotation));
+    
+    overlay.appendChild(underlineDiv);
+}

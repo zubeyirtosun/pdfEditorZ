@@ -34,6 +34,10 @@
                 </span>
             </div>
             <nav class="nav">
+                <button class="nav-btn" onclick="toggleDarkMode()" id="darkModeToggle">
+                    <i class="fas fa-moon"></i>
+                    Karanlık Mod
+                </button>
                 <button class="nav-btn" onclick="showHelp()">
                     <i class="fas fa-question-circle"></i>
                     Yardım
@@ -44,8 +48,13 @@
 
     <!-- Main Container -->
     <div class="main-container">
+        <!-- Sidebar Toggle Button -->
+        <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
+            <i class="fas fa-bars"></i>
+        </button>
+        
         <!-- Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar" id="sidebar">
             <div class="tool-section">
                 <h3><i class="fas fa-upload"></i> Dosya</h3>
                 <button class="tool-btn" onclick="document.getElementById('pdfInput').click()">
@@ -90,6 +99,34 @@
                     Silgi
                 </button>
                 <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="loadImage(event)">
+            </div>
+
+            <div class="tool-section">
+                <h3><i class="fas fa-marker"></i> Gelişmiş Araçlar</h3>
+                <button class="tool-btn" onclick="activateTool('sticky-note')" title="Yapışkan Not">
+                    <i class="fas fa-sticky-note"></i>
+                    Yapışkan Not
+                </button>
+                <button class="tool-btn" onclick="activateTool('callout')" title="Açıklama Kutusu">
+                    <i class="fas fa-comment-dots"></i>
+                    Açıklama
+                </button>
+                <button class="tool-btn" onclick="activateTool('strikethrough')" title="Üstü Çizili">
+                    <i class="fas fa-strikethrough"></i>
+                    Üstü Çizili
+                </button>
+                <button class="tool-btn" onclick="activateTool('underline')" title="Altı Çizili">
+                    <i class="fas fa-underline"></i>
+                    Altı Çizili
+                </button>
+                <button class="tool-btn" onclick="openStampLibrary()" title="Mühür Kütüphanesi">
+                    <i class="fas fa-stamp"></i>
+                    Mühür
+                </button>
+                <button class="tool-btn" onclick="activateTool('freehand')" title="Serbest Çizim">
+                    <i class="fas fa-paint-brush"></i>
+                    Serbest Çizim
+                </button>
             </div>
 
             <div class="tool-section">
@@ -536,5 +573,65 @@
     </div>
 
     <script src="script.js"></script>
+    
+    <!-- Stamp Library Modal -->
+    <div class="modal" id="stampLibraryModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Mühür Kütüphanesi</h3>
+                <button class="close-btn" onclick="closeStampLibrary()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="stamp-categories">
+                    <button class="stamp-category active" data-category="approval">Onay</button>
+                    <button class="stamp-category" data-category="status">Durum</button>
+                    <button class="stamp-category" data-category="date">Tarih</button>
+                    <button class="stamp-category" data-category="custom">Özel</button>
+                </div>
+                <div class="stamp-grid" id="stampGrid">
+                    <!-- Stamps will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu" style="display: none;">
+        <div class="context-menu-item" onclick="handleContextAction('copy')">
+            <i class="fas fa-copy"></i>
+            <span>Kopyala</span>
+            <span class="shortcut">Ctrl+C</span>
+        </div>
+        <div class="context-menu-item" onclick="handleContextAction('paste')">
+            <i class="fas fa-paste"></i>
+            <span>Yapıştır</span>
+            <span class="shortcut">Ctrl+V</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" onclick="handleContextAction('duplicate')">
+            <i class="fas fa-clone"></i>
+            <span>Çoğalt</span>
+            <span class="shortcut">Ctrl+D</span>
+        </div>
+        <div class="context-menu-item" onclick="handleContextAction('delete')">
+            <i class="fas fa-trash"></i>
+            <span>Sil</span>
+            <span class="shortcut">Del</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" onclick="handleContextAction('bringToFront')">
+            <i class="fas fa-bring-forward"></i>
+            <span>Öne Getir</span>
+        </div>
+        <div class="context-menu-item" onclick="handleContextAction('sendToBack')">
+            <i class="fas fa-send-backward"></i>
+            <span>Arkaya Gönder</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" onclick="handleContextAction('properties')">
+            <i class="fas fa-cog"></i>
+            <span>Özellikler</span>
+        </div>
+    </div>
 </body>
 </html> 
