@@ -11,8 +11,71 @@ let lastY = 0;
 let annotations = [];
 let currentSignature = null;
 
+// Check if libraries are loaded
+function checkLibraries() {
+    console.log('Kütüphane kontrolü başlatılıyor...');
+    
+    if (typeof pdfjsLib === 'undefined') {
+        console.error('PDF.js kütüphanesi yüklenemedi!');
+        return false;
+    }
+    
+    if (typeof PDFLib === 'undefined') {
+        console.error('PDF-lib kütüphanesi yüklenemedi!');
+        return false;
+    }
+    
+    console.log('✅ Tüm kütüphaneler başarıyla yüklendi');
+    return true;
+}
+
+// Alternative CDN loader
+async function loadAlternativeCDNs() {
+    console.log('Alternatif CDN\'ler yükleniyor...');
+    
+    // Alternative PDF.js
+    if (typeof pdfjsLib === 'undefined') {
+        try {
+            const script1 = document.createElement('script');
+            script1.src = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js';
+            document.head.appendChild(script1);
+            
+            await new Promise((resolve, reject) => {
+                script1.onload = resolve;
+                script1.onerror = reject;
+            });
+            
+            if (typeof pdfjsLib !== 'undefined') {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+            }
+        } catch (error) {
+            console.error('Alternatif PDF.js yüklenemedi:', error);
+        }
+    }
+    
+    // Alternative PDF-lib
+    if (typeof PDFLib === 'undefined') {
+        try {
+            const script2 = document.createElement('script');
+            script2.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+            document.head.appendChild(script2);
+            
+            await new Promise((resolve, reject) => {
+                script2.onload = resolve;
+                script2.onerror = reject;
+            });
+        } catch (error) {
+            console.error('Alternatif PDF-lib yüklenemedi:', error);
+        }
+    }
+    
+    return checkLibraries();
+}
+
 // PDF.js setup
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
 
 // DOM elements
 const canvas = document.getElementById('pdfCanvas');
@@ -37,15 +100,47 @@ async function loadPDF(event) {
     const file = event.target.files[0];
     if (!file) return;
 
+    console.log('Seçilen dosya:', file.name, 'Boyut:', file.size, 'bytes');
+    
+    // File type check
+    if (file.type !== 'application/pdf') {
+        alert('Lütfen sadece PDF dosyası seçin!');
+        return;
+    }
+
+    // Check if libraries are loaded
+    if (!checkLibraries()) {
+        alert('PDF kütüphaneleri yüklenirken hata oluştu. Sayfayı yenileyin veya internet bağlantınızı kontrol edin.');
+        
+        // Try to load alternative CDNs
+        const loaded = await loadAlternativeCDNs();
+        if (!loaded) {
+            alert('PDF kütüphaneleri yüklenemedi. Lütfen sayfayı yenileyin.');
+            return;
+        }
+    }
+
     try {
+        console.log('PDF yükleme başladı...');
+        
+        // Show loading indicator
+        const welcomeText = document.querySelector('.welcome-screen h2');
+        const originalText = welcomeText.textContent;
+        welcomeText.textContent = 'PDF Yükleniyor...';
+        
         const arrayBuffer = await file.arrayBuffer();
+        console.log('ArrayBuffer oluşturuldu, boyut:', arrayBuffer.byteLength);
         
         // Load with PDF.js for display
+        console.log('PDF.js ile yükleme başladı...');
         pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
         pageCount = pdfDoc.numPages;
+        console.log('PDF.js yükleme tamamlandı. Sayfa sayısı:', pageCount);
         
         // Load with PDF-lib for editing
+        console.log('PDF-lib ile yükleme başladı...');
         currentPdf = await PDFLib.PDFDocument.load(arrayBuffer);
+        console.log('PDF-lib yükleme tamamlandı');
         
         // Hide welcome screen and show PDF
         welcomeScreen.style.display = 'none';
@@ -53,13 +148,37 @@ async function loadPDF(event) {
         pageNavigation.style.display = 'flex';
         
         // Render first page
-        renderPage(1);
+        await renderPage(1);
         updatePageInfo();
         
-        console.log('PDF yüklendi:', pageCount, 'sayfa');
+        console.log('PDF başarıyla yüklendi:', pageCount, 'sayfa');
+        
     } catch (error) {
-        console.error('PDF yükleme hatası:', error);
-        alert('PDF yüklenirken bir hata oluştu. Lütfen geçerli bir PDF dosyası seçin.');
+        console.error('PDF yükleme detaylı hatası:', error);
+        
+        // Restore welcome text
+        const welcomeText = document.querySelector('.welcome-screen h2');
+        welcomeText.textContent = 'PDF EditorZ\'e Hoş Geldiniz!';
+        
+        // More specific error messages
+        let errorMessage = 'PDF yüklenirken bir hata oluştu. ';
+        
+        if (error.message.includes('Invalid PDF')) {
+            errorMessage += 'Bu dosya geçerli bir PDF değil veya hasarlı olabilir.';
+        } else if (error.message.includes('Password')) {
+            errorMessage += 'Bu PDF şifre korumalı. Şu anda şifreli PDF\'ler desteklenmiyor.';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+            errorMessage += 'Ağ bağlantısı sorunu. İnternet bağlantınızı kontrol edin.';
+        } else if (error.name === 'InvalidPDFException') {
+            errorMessage += 'PDF dosyası hasarlı veya desteklenmeyen formatta.';
+        } else {
+            errorMessage += 'Detaylar: ' + error.message;
+        }
+        
+        alert(errorMessage);
+        
+        // Reset file input
+        document.getElementById('pdfInput').value = '';
     }
 }
 
@@ -586,8 +705,31 @@ document.addEventListener('keydown', function(event) {
 });
 
 // Initialize app
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('PDF EditorZ yüklendi!');
+    
+    // Check if libraries are loaded
+    if (!checkLibraries()) {
+        console.warn('Kütüphaneler yüklenmedi, alternatif CDN\'ler deneniyor...');
+        
+        // Show loading message
+        const welcomeText = document.querySelector('.welcome-screen h2');
+        if (welcomeText) {
+            welcomeText.textContent = 'PDF Kütüphaneleri Yükleniyor...';
+        }
+        
+        const loaded = await loadAlternativeCDNs();
+        
+        if (welcomeText) {
+            welcomeText.textContent = loaded ? 'PDF EditorZ\'e Hoş Geldiniz!' : 'Kütüphane Yükleme Hatası!';
+        }
+        
+        if (!loaded) {
+            console.error('Kütüphaneler yüklenemedi!');
+            alert('PDF düzenleme kütüphaneleri yüklenemedi. Lütfen sayfayı yenileyin veya internet bağlantınızı kontrol edin.');
+        }
+    }
+    
     updateZoomLevel();
     
     // Set initial size value

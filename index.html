@@ -6,8 +6,17 @@
     <title>PDF EditorZ - Güçlü PDF Düzenleme Aracı</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    
+    <!-- PDF Libraries with fallbacks -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" 
+            crossorigin="anonymous" 
+            onerror="this.src='https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'">
+    </script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" 
+            crossorigin="anonymous"
+            onerror="this.src='https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js'">
+    </script>
 </head>
 <body>
     <!-- Header -->
