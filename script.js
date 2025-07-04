@@ -19,6 +19,11 @@ let isDragging = false;
 let isResizing = false;
 let dragOffset = { x: 0, y: 0 };
 
+// Modern PDF editor features
+let autoSaveEnabled = true;
+let lastSavedState = null;
+let annotationCounter = 0;
+
 // Check if libraries are loaded
 function checkLibraries() {
     console.log('Kütüphane kontrolü başlatılıyor...');
@@ -199,9 +204,9 @@ function drawTextAnnotation(annotation) {
     const textElement = document.createElement('div');
     textElement.className = 'text-annotation';
     textElement.style.position = 'absolute';
-    textElement.style.left = annotation.x + 'px';
-    textElement.style.top = annotation.y + 'px';
-    textElement.style.fontSize = annotation.size + 'px';
+    textElement.style.left = (annotation.x * currentScale) + 'px';
+    textElement.style.top = (annotation.y * currentScale) + 'px';
+    textElement.style.fontSize = (annotation.size * currentScale) + 'px';
     textElement.style.color = annotation.color;
     textElement.style.fontFamily = 'Arial, sans-serif';
     textElement.style.cursor = 'move';
@@ -397,32 +402,62 @@ function activateEraser() {
 
 function eraseAt(x, y) {
     const eraserSize = parseInt(sizePicker.value);
+    let somethingErased = false;
     
     // Remove annotations within eraser radius
+    const originalLength = annotations.length;
     annotations = annotations.filter(annotation => {
         if (annotation.page !== currentPageNum) return true;
         
+        let shouldKeep = true;
         switch (annotation.type) {
             case 'text':
                 const textDistance = Math.sqrt(
                     Math.pow(annotation.x - x, 2) + Math.pow(annotation.y - y, 2)
                 );
-                return textDistance > eraserSize;
+                shouldKeep = textDistance > eraserSize;
+                break;
                 
             case 'draw':
                 const lineDistance = distanceToLine(x, y, annotation.x1, annotation.y1, annotation.x2, annotation.y2);
-                return lineDistance > eraserSize;
+                shouldKeep = lineDistance > eraserSize;
+                break;
                 
             case 'signature':
-                return !(x >= annotation.x && x <= annotation.x + annotation.width &&
-                        y >= annotation.y && y <= annotation.y + annotation.height);
+                shouldKeep = !(x >= annotation.x && x <= annotation.x + annotation.width &&
+                              y >= annotation.y && y <= annotation.y + annotation.height);
+                break;
+                
+            case 'shape':
+                const shapeCenter = {
+                    x: annotation.x + annotation.width / 2,
+                    y: annotation.y + annotation.height / 2
+                };
+                const distanceToShape = Math.sqrt(
+                    Math.pow(shapeCenter.x - x, 2) + Math.pow(shapeCenter.y - y, 2)
+                );
+                shouldKeep = distanceToShape > eraserSize;
+                break;
                 
             default:
-                return true;
+                shouldKeep = true;
         }
+        
+        if (!shouldKeep) {
+            somethingErased = true;
+            // Remove from overlay if it's a text element
+            const element = overlay.querySelector(`[data-annotation-id="${annotation.id}"]`);
+            if (element) {
+                element.remove();
+            }
+        }
+        return shouldKeep;
     });
     
-    redrawCanvas();
+    // Only redraw if something was actually erased
+    if (somethingErased) {
+        redrawCanvas();
+    }
 }
 
 function distanceToLine(px, py, x1, y1, x2, y2) {
@@ -692,8 +727,9 @@ function handleCanvasClick(event) {
     if (!activeTool) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    // Scale coordinates based on zoom level
+    const x = (event.clientX - rect.left) / currentScale;
+    const y = (event.clientY - rect.top) / currentScale;
     
     switch (activeTool) {
         case 'text':
@@ -712,8 +748,8 @@ function handleCanvasClick(event) {
 
 function handleMouseDown(event) {
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const x = (event.clientX - rect.left) / currentScale;
+    const y = (event.clientY - rect.top) / currentScale;
     
     switch (activeTool) {
         case 'draw':
@@ -740,15 +776,18 @@ function handleMouseDown(event) {
 
 function handleMouseMove(event) {
     const rect = canvas.getBoundingClientRect();
-    const currentX = event.clientX - rect.left;
-    const currentY = event.clientY - rect.top;
+    const currentX = (event.clientX - rect.left) / currentScale;
+    const currentY = (event.clientY - rect.top) / currentScale;
     
-    // Update eraser indicator
+    // Update eraser indicator (use screen coordinates for visual indicator)
     if (activeTool === 'eraser') {
         const indicator = document.getElementById('eraserIndicator');
         if (indicator) {
-            indicator.style.left = (event.clientX - parseInt(sizePicker.value) / 2) + 'px';
-            indicator.style.top = (event.clientY - parseInt(sizePicker.value) / 2) + 'px';
+            const indicatorSize = parseInt(sizePicker.value) * currentScale;
+            indicator.style.left = (event.clientX - indicatorSize / 2) + 'px';
+            indicator.style.top = (event.clientY - indicatorSize / 2) + 'px';
+            indicator.style.width = indicatorSize + 'px';
+            indicator.style.height = indicatorSize + 'px';
             indicator.style.display = 'block';
         }
         
@@ -766,8 +805,8 @@ function handleMouseMove(event) {
 
 function handleMouseUp(event) {
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const x = (event.clientX - rect.left) / currentScale;
+    const y = (event.clientY - rect.top) / currentScale;
     
     if (activeTool === 'shape' && isDrawingShape) {
         addShapeAnnotation(shapeStartX, shapeStartY, x, y);
@@ -790,8 +829,8 @@ function handleOverlayMouseDown(event) {
     if (event.target.classList.contains('text-annotation')) {
         isDragging = true;
         const rect = overlay.getBoundingClientRect();
-        dragOffset.x = event.clientX - rect.left - parseInt(event.target.style.left);
-        dragOffset.y = event.clientY - rect.top - parseInt(event.target.style.top);
+        dragOffset.x = (event.clientX - rect.left - parseInt(event.target.style.left)) / currentScale;
+        dragOffset.y = (event.clientY - rect.top - parseInt(event.target.style.top)) / currentScale;
         event.preventDefault();
     }
 }
@@ -799,13 +838,14 @@ function handleOverlayMouseDown(event) {
 function handleOverlayMouseMove(event) {
     if (isDragging && selectedElement) {
         const rect = overlay.getBoundingClientRect();
-        const newX = event.clientX - rect.left - dragOffset.x;
-        const newY = event.clientY - rect.top - dragOffset.y;
+        const newX = (event.clientX - rect.left) / currentScale - dragOffset.x;
+        const newY = (event.clientY - rect.top) / currentScale - dragOffset.y;
         
-        selectedElement.style.left = newX + 'px';
-        selectedElement.style.top = newY + 'px';
+        // Update visual position (scaled)
+        selectedElement.style.left = (newX * currentScale) + 'px';
+        selectedElement.style.top = (newY * currentScale) + 'px';
         
-        // Update annotation data
+        // Update annotation data (original coordinates)
         const annotationId = selectedElement.getAttribute('data-annotation-id');
         const annotation = annotations.find(a => a.id === annotationId);
         if (annotation) {
@@ -1114,90 +1154,389 @@ async function addBlankPage() {
     }
 }
 
-// Download function
-async function downloadPDF() {
-    if (!currentPdf) {
-        alert('Önce bir PDF dosyası yükleyin!');
-        return;
+// Auto-save functionality
+function enableAutoSave() {
+    autoSaveEnabled = true;
+    setInterval(() => {
+        if (autoSaveEnabled && annotations.length > 0) {
+            autoSave();
+        }
+    }, 30000); // Auto-save every 30 seconds
+}
+
+function autoSave() {
+    try {
+        const currentState = JSON.stringify(annotations);
+        if (currentState !== lastSavedState) {
+            localStorage.setItem('pdfeditor_autosave', currentState);
+            localStorage.setItem('pdfeditor_timestamp', Date.now());
+            lastSavedState = currentState;
+            showNotification('Otomatik kayıt yapıldı', 'success');
+            console.log('Auto-save completed');
+        }
+    } catch (error) {
+        console.warn('Auto-save failed:', error);
+    }
+}
+
+function loadAutoSave() {
+    try {
+        const saved = localStorage.getItem('pdfeditor_autosave');
+        const timestamp = localStorage.getItem('pdfeditor_timestamp');
+        
+        if (saved && timestamp) {
+            const savedTime = new Date(parseInt(timestamp));
+            const timeDiff = Date.now() - parseInt(timestamp);
+            
+            // Only load if saved within last 24 hours
+            if (timeDiff < 24 * 60 * 60 * 1000) {
+                const savedAnnotations = JSON.parse(saved);
+                if (savedAnnotations.length > 0) {
+                    const restore = confirm(
+                        `${savedTime.toLocaleString()} tarihinde kaydedilmiş ${savedAnnotations.length} düzenleme bulundu. Geri yüklemek ister misiniz?`
+                    );
+                    
+                    if (restore) {
+                        annotations = savedAnnotations;
+                        updateAnnotationCounter();
+                        showNotification('Önceki çalışmanız geri yüklendi', 'success');
+                        redrawCanvas();
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('Auto-save load failed:', error);
+    }
+}
+
+function updateAnnotationCounter() {
+    annotationCounter = annotations.length;
+    const counter = document.getElementById('annotationCounter');
+    const badge = document.getElementById('annotationBadge');
+    
+    if (counter) {
+        counter.textContent = annotationCounter;
     }
     
+    if (badge) {
+        badge.style.display = annotationCounter > 0 ? 'inline-flex' : 'none';
+    }
+}
+
+function showNotification(message, type = 'info') {
+    // Remove existing notifications
+    document.querySelectorAll('.notification').forEach(n => n.remove());
+    
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+        <span>${message}</span>
+    `;
+    
+    notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Animate in
+    setTimeout(() => {
+        notification.style.transform = 'translateX(0)';
+    }, 100);
+    
+    // Auto remove
+    setTimeout(() => {
+        notification.style.transform = 'translateX(100%)';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+// Enhanced download with progress
+async function downloadPDFWithProgress() {
+    if (!currentPdf) {
+        showNotification('Önce bir PDF dosyası yükleyin!', 'error');
+        return;
+    }
+
+    const progressModal = createProgressModal();
+    document.body.appendChild(progressModal);
+    
     try {
+        updateProgress('PDF hazırlanıyor...', 10);
+        
         // Apply annotations to PDF
+        updateProgress('Düzenlemeler uygulanıyor...', 30);
         await applyAnnotations();
         
+        updateProgress('PDF oluşturuluyor...', 60);
         const pdfBytes = await currentPdf.save();
+        
+        updateProgress('İndirme başlatılıyor...', 90);
         const blob = new Blob([pdfBytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
         
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'edited-document.pdf';
+        a.download = `edited-document-${new Date().toISOString().slice(0, 10)}.pdf`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
+        updateProgress('Tamamlandı!', 100);
+        
+        setTimeout(() => {
+            progressModal.remove();
+            showNotification(`PDF başarıyla indirildi! ${annotations.length} düzenleme dahil edildi.`, 'success');
+        }, 1000);
+        
         console.log('PDF indirildi');
     } catch (error) {
         console.error('PDF indirme hatası:', error);
-        alert('PDF indirilirken bir hata oluştu.');
+        progressModal.remove();
+        showNotification('PDF indirilirken bir hata oluştu: ' + error.message, 'error');
     }
 }
 
+function createProgressModal() {
+    const modal = document.createElement('div');
+    modal.className = 'progress-modal';
+    modal.innerHTML = `
+        <div class="progress-content">
+            <h3><i class="fas fa-download"></i> PDF İndiriliyor</h3>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p id="progressText">Başlatılıyor...</p>
+            <div class="progress-percentage" id="progressPercentage">0%</div>
+        </div>
+    `;
+    
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10001;
+    `;
+    
+    return modal;
+}
+
+function updateProgress(text, percentage) {
+    const progressText = document.getElementById('progressText');
+    const progressFill = document.getElementById('progressFill');
+    const progressPercentage = document.getElementById('progressPercentage');
+    
+    if (progressText) progressText.textContent = text;
+    if (progressFill) progressFill.style.width = percentage + '%';
+    if (progressPercentage) progressPercentage.textContent = percentage + '%';
+}
+
+// Keep original downloadPDF for backward compatibility
+async function downloadPDF() {
+    await downloadPDFWithProgress();
+}
+
 async function applyAnnotations() {
-    if (annotations.length === 0) return;
+    if (annotations.length === 0) {
+        console.log('Hiç annotation yok, atlaniyor...');
+        return;
+    }
     
     try {
+        console.log('Annotations uygulanıyor...', annotations.length, 'adet');
         const pages = currentPdf.getPages();
         
-        for (const annotation of annotations) {
-            const page = pages[annotation.page - 1];
+        // Group annotations by page for better processing
+        const annotationsByPage = {};
+        annotations.forEach(ann => {
+            if (!annotationsByPage[ann.page]) {
+                annotationsByPage[ann.page] = [];
+            }
+            annotationsByPage[ann.page].push(ann);
+        });
+        
+        console.log('Sayfa grupları:', Object.keys(annotationsByPage));
+        
+        for (const [pageNum, pageAnnotations] of Object.entries(annotationsByPage)) {
+            const pageIndex = parseInt(pageNum) - 1;
+            if (pageIndex < 0 || pageIndex >= pages.length) {
+                console.warn(`Geçersiz sayfa numarası: ${pageNum}`);
+                continue;
+            }
+            
+            const page = pages[pageIndex];
             const { width, height } = page.getSize();
+            console.log(`Sayfa ${pageNum} işleniyor: ${pageAnnotations.length} annotation`);
             
-            // Convert canvas coordinates to PDF coordinates
-            const pdfX = (annotation.x / canvas.width) * width;
-            const pdfY = height - ((annotation.y / canvas.height) * height);
-            
-            switch (annotation.type) {
-                case 'text':
-                    page.drawText(annotation.text, {
-                        x: pdfX,
-                        y: pdfY,
-                        size: annotation.size,
-                        color: PDFLib.rgb(
-                            parseInt(annotation.color.substr(1, 2), 16) / 255,
-                            parseInt(annotation.color.substr(3, 2), 16) / 255,
-                            parseInt(annotation.color.substr(5, 2), 16) / 255
-                        )
-                    });
-                    break;
-                
-                case 'signature':
-                    if (annotation.image) {
-                        try {
-                            // Convert signature image to PDF format
-                            const imageBytes = await fetch(annotation.image).then(res => res.arrayBuffer());
-                            // Create fresh Uint8Array to avoid detached ArrayBuffer
-                            const imageBytesCopy = new Uint8Array(imageBytes);
-                            const image = await currentPdf.embedPng(imageBytesCopy);
-                            
-                            page.drawImage(image, {
-                                x: pdfX,
-                                y: pdfY - (annotation.height / canvas.height) * height,
-                                width: (annotation.width / canvas.width) * width,
-                                height: (annotation.height / canvas.height) * height
+            for (const annotation of pageAnnotations) {
+                try {
+                    switch (annotation.type) {
+                        case 'text':
+                            // Use actual annotation coordinates (not canvas-relative)
+                            const textFont = await currentPdf.embedFont(PDFLib.StandardFonts.Helvetica);
+                            page.drawText(annotation.text || 'Metin', {
+                                x: annotation.x,
+                                y: height - annotation.y - annotation.size,
+                                size: annotation.size,
+                                color: PDFLib.rgb(
+                                    parseInt(annotation.color.slice(1, 3), 16) / 255,
+                                    parseInt(annotation.color.slice(3, 5), 16) / 255,
+                                    parseInt(annotation.color.slice(5, 7), 16) / 255
+                                ),
+                                font: textFont
                             });
-                        } catch (imgError) {
-                            console.warn('İmza ekleme hatası:', imgError);
-                        }
+                            console.log('Metin eklendi:', annotation.text);
+                            break;
+                        
+                        case 'draw':
+                            // Draw line using actual coordinates
+                            page.drawLine({
+                                start: { x: annotation.x1, y: height - annotation.y1 },
+                                end: { x: annotation.x2, y: height - annotation.y2 },
+                                thickness: annotation.width || 2,
+                                color: PDFLib.rgb(
+                                    parseInt(annotation.color.slice(1, 3), 16) / 255,
+                                    parseInt(annotation.color.slice(3, 5), 16) / 255,
+                                    parseInt(annotation.color.slice(5, 7), 16) / 255
+                                )
+                            });
+                            console.log('Çizgi eklendi');
+                            break;
+                        
+                        case 'shape':
+                            const shapeColor = PDFLib.rgb(
+                                parseInt(annotation.color.slice(1, 3), 16) / 255,
+                                parseInt(annotation.color.slice(3, 5), 16) / 255,
+                                parseInt(annotation.color.slice(5, 7), 16) / 255
+                            );
+                            
+                            if (annotation.shapeType === 'rectangle') {
+                                page.drawRectangle({
+                                    x: annotation.x,
+                                    y: height - annotation.y - annotation.height,
+                                    width: annotation.width,
+                                    height: annotation.height,
+                                    borderColor: shapeColor,
+                                    borderWidth: 2
+                                });
+                            } else if (annotation.shapeType === 'circle') {
+                                const radius = Math.min(annotation.width, annotation.height) / 2;
+                                page.drawCircle({
+                                    x: annotation.x + radius,
+                                    y: height - annotation.y - radius,
+                                    size: radius,
+                                    borderColor: shapeColor,
+                                    borderWidth: 2
+                                });
+                            }
+                            console.log('Şekil eklendi:', annotation.shapeType);
+                            break;
+                        
+                        case 'signature':
+                            if (annotation.image) {
+                                try {
+                                    // Handle base64 image data
+                                    const base64Data = annotation.image.split(',')[1];
+                                    const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+                                    
+                                    let image;
+                                    if (annotation.image.includes('data:image/png')) {
+                                        image = await currentPdf.embedPng(imageBytes);
+                                    } else {
+                                        image = await currentPdf.embedJpg(imageBytes);
+                                    }
+                                    
+                                    page.drawImage(image, {
+                                        x: annotation.x,
+                                        y: height - annotation.y - annotation.height,
+                                        width: annotation.width,
+                                        height: annotation.height
+                                    });
+                                    console.log('İmza eklendi');
+                                } catch (imgError) {
+                                    console.warn('İmza ekleme hatası:', imgError);
+                                }
+                            }
+                            break;
+                            
+                        default:
+                            console.warn('Bilinmeyen annotation tipi:', annotation.type);
                     }
-                    break;
+                } catch (annotationError) {
+                    console.warn('Annotation işleme hatası:', annotationError, annotation);
+                }
             }
         }
         
-        console.log('Annotations uygulandı:', annotations.length);
+        console.log('Tüm annotations başarıyla uygulandı');
     } catch (error) {
         console.error('Annotation uygulama hatası:', error);
+        throw error;
+    }
+}
+
+// Enhanced state management
+function saveStateWithNotification() {
+    saveState();
+    updateAnnotationCounter();
+    showNotification('Değişiklik kaydedildi', 'success');
+}
+
+// Override original functions
+const originalSaveState = saveState;
+saveState = function() {
+    originalSaveState();
+    updateAnnotationCounter();
+    if (autoSaveEnabled) {
+        autoSave();
+    }
+};
+
+// Initialize modern features
+document.addEventListener('DOMContentLoaded', function() {
+    enableAutoSave();
+    loadAutoSave();
+    
+    // Add modern UI enhancements
+    addModernUIElements();
+});
+
+function addModernUIElements() {
+    // Add annotation counter to header
+    const logo = document.querySelector('.logo');
+    if (logo) {
+        const counter = document.createElement('div');
+        counter.innerHTML = `
+            <span class="annotation-badge" style="display: none;">
+                <i class="fas fa-edit"></i>
+                <span id="annotationCounter">0</span>
+            </span>
+        `;
+        logo.appendChild(counter);
     }
 }
 

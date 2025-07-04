@@ -642,18 +642,26 @@ body {
     border-radius: 4px;
     outline: none;
     transition: all 0.2s ease;
-    min-width: 20px;
-    min-height: 20px;
+    min-width: 40px;
+    min-height: 30px;
     white-space: nowrap;
+    border: 2px solid transparent;
+    padding: 6px 8px !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    line-height: 1.2;
 }
 
 .text-annotation:hover {
     background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(59, 130, 246, 0.3);
+    cursor: move;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .text-annotation.selected {
-    border: 1px dashed #3b82f6 !important;
+    border: 2px dashed #3b82f6 !important;
     background: rgba(59, 130, 246, 0.05);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 /* Resize Handles */
@@ -747,5 +755,131 @@ body {
     
     .half-width {
         width: 100% !important;
+    }
+}
+
+/* Progress Modal */
+.progress-content {
+    background: white;
+    padding: 32px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    min-width: 400px;
+}
+
+.progress-content h3 {
+    margin-bottom: 24px;
+    color: #1e293b;
+    font-size: 20px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.progress-content p {
+    color: #64748b;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.progress-percentage {
+    font-size: 24px;
+    font-weight: 600;
+    color: #3b82f6;
+}
+
+/* Annotation Badge */
+.annotation-badge {
+    background: #3b82f6;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-left: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Enhanced Text Annotation Styles */
+.text-annotation.editing {
+    border: 2px solid #3b82f6 !important;
+    background: white !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Modern Drag Handles */
+.text-annotation::before {
+    content: '⋮⋮';
+    position: absolute;
+    left: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    cursor: move;
+}
+
+.text-annotation:hover::before {
+    opacity: 1;
+}
+
+/* Enhanced Canvas Cursor */
+.canvas-container {
+    position: relative;
+}
+
+.canvas-container.eraser-mode {
+    cursor: none !important;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .progress-content {
+        min-width: 300px;
+        padding: 24px;
+    }
+    
+    .progress-content h3 {
+        font-size: 18px;
+    }
+    
+    .notification {
+        right: 10px !important;
+        left: 10px !important;
+        max-width: none !important;
+    }
+    
+    .text-annotation {
+        min-width: 60px;
+        min-height: 40px;
+        font-size: 14px !important;
+    }
+    
+    .annotation-badge {
+        margin-left: 8px;
     }
 } 
