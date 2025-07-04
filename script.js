@@ -686,6 +686,9 @@ function activateTool(tool) {
 
 function updateCursor() {
     switch (activeTool) {
+        case 'cursor':
+            canvas.style.cursor = 'default';
+            break;
         case 'text':
             canvas.style.cursor = 'text';
             break;
@@ -732,6 +735,10 @@ function handleCanvasClick(event) {
     const y = (event.clientY - rect.top) / currentScale;
     
     switch (activeTool) {
+        case 'cursor':
+            // Cursor tool for selection and navigation only
+            deselectAllElements();
+            break;
         case 'text':
             addModernTextAnnotation(x, y);
             break;
@@ -746,12 +753,30 @@ function handleCanvasClick(event) {
     }
 }
 
+function deselectAllElements() {
+    // Deselect any selected elements
+    if (selectedElement) {
+        selectedElement.style.border = '1px dashed transparent';
+        selectedElement = null;
+        document.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+    }
+    
+    // Clear any active selections
+    document.querySelectorAll('.text-annotation.selected').forEach(element => {
+        element.classList.remove('selected');
+    });
+}
+
 function handleMouseDown(event) {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) / currentScale;
     const y = (event.clientY - rect.top) / currentScale;
     
     switch (activeTool) {
+        case 'cursor':
+            // Cursor tool doesn't draw or create anything
+            break;
+            
         case 'draw':
             isDrawing = true;
             lastX = x;
@@ -801,6 +826,14 @@ function handleMouseMove(event) {
         lastX = currentX;
         lastY = currentY;
     }
+    
+    // Hide eraser indicator if not in eraser mode
+    if (activeTool !== 'eraser') {
+        const indicator = document.getElementById('eraserIndicator');
+        if (indicator) {
+            indicator.style.display = 'none';
+        }
+    }
 }
 
 function handleMouseUp(event) {
@@ -815,12 +848,10 @@ function handleMouseUp(event) {
     
     isDrawing = false;
     
-    // Hide eraser indicator
-    if (activeTool === 'eraser') {
-        const indicator = document.getElementById('eraserIndicator');
-        if (indicator) {
-            indicator.style.display = 'none';
-        }
+    // Hide eraser indicator when mouse up
+    const indicator = document.getElementById('eraserIndicator');
+    if (indicator && activeTool === 'eraser') {
+        indicator.style.display = 'none';
     }
 }
 
@@ -1523,6 +1554,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Add modern UI enhancements
     addModernUIElements();
+    
+    // Set cursor tool as default
+    activateTool('cursor');
 });
 
 function addModernUIElements() {
@@ -1604,6 +1638,11 @@ document.addEventListener('keydown', function(event) {
         case 'd':
             if (!event.ctrlKey && !event.metaKey) {
                 activateTool('draw');
+            }
+            break;
+        case 'c':
+            if (!event.ctrlKey && !event.metaKey) {
+                activateTool('cursor');
             }
             break;
         case 'e':
